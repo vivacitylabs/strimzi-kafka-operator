@@ -61,11 +61,11 @@ RUN make java_install
 
 ENV MVN_ARGS="-e -V -B -X"
 
-RUN make spotbugs && \
-    make dashboard_install && \
-    make helm_install && \
-    make crd_install && \
-    make docu_versions && \
-    make docu_check && \
-    make shellcheck && \
-    make release_files_check
+RUN make spotbugs
+RUN make dashboard_install
+RUN make helm_install
+RUN make crd_install
+RUN make docu_versions
+RUN make docu_check
+RUN make shellcheck
+RUN make release_files_check
