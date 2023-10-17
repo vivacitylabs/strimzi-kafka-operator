@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 #FROM eclipse-temurin:17-jdk-jammy
-FROM maven:3-eclipse-temurin-17
+FROM maven:3-eclipse-temurin-17 as build
 
 #COPY .azure/scripts scripts
-RUN mkdir /strimzi
-WORKDIR /strimzi
+RUN mkdir -p /opt/kafka
+WORKDIR /opt/kafka
 COPY . .
 
 
@@ -61,11 +61,45 @@ RUN make java_install
 
 ENV MVN_ARGS="-e -V -B -X"
 
-RUN make spotbugs
-RUN make dashboard_install
-RUN make helm_install
-RUN make crd_install
-RUN make docu_versions
-RUN make docu_check
-RUN make shellcheck
-RUN make release_files_check
+
+
+#RUN make spotbugs
+#RUN make dashboard_install
+#RUN make helm_install
+#RUN make crd_install
+#RUN make docu_versions
+#RUN make docu_check
+#RUN make shellcheck
+#RUN make release_files_check
+
+# Can't run the below command as it relies on having docker installed.
+#RUN make docker_build docker_save docker_push
+
+RUN make clean
+RUN make all
+
+#RUN tar -cvpf binaries.tar ./docker-images/artifacts/binaries
+
+#FROM ubuntu:22.04 as main
+#
+#COPY --from=build ./docker-images/artifacts/binaries .
+#
+##ARG strimzi_version=$RELEASE_VERSION
+#
+#LABEL org.opencontainers.image.source='https://github.com/strimzi/strimzi-kafka-operator'
+#
+## Add strimzi user with UID 1001
+## The user is in the group 0 to have access to the mounted volumes and storage
+#RUN useradd -r -m -u 1001 -g 0 strimzi
+#
+#ARG strimzi_version=1.0-SNAPSHOT
+#ENV STRIMZI_VERSION ${strimzi_version}
+#ENV STRIMZI_HOME=/opt/strimzi
+#RUN mkdir -p ${STRIMZI_HOME}/bin
+#WORKDIR ${STRIMZI_HOME}
+#
+#COPY scripts/ tmp/bin/ bin/
+#
+#COPY tmp/lib/ lib/
+#
+#USER 1001
