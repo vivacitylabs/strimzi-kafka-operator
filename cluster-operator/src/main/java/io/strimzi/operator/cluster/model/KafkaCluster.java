@@ -321,6 +321,11 @@ public class KafkaCluster extends AbstractModel implements SupportsMetrics, Supp
         ListenersValidator.validate(reconciliation, result.brokerNodes(), listeners);
         result.listeners = listeners;
 
+        String sslPrincipalMappingRules = result.configuration.getConfigOption("ssl.principal.mapping.rules");
+        if (sslPrincipalMappingRules != null) {
+            SslPrincipalMappingValidator.validate(sslPrincipalMappingRules, kafka.getMetadata().getName());
+        }
+
         // Set authorization
         if (kafkaClusterSpec.getAuthorization() instanceof KafkaAuthorizationKeycloak) {
             if (!ListenersUtils.hasListenerWithOAuth(listeners)) {
