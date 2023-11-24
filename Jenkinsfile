@@ -6,9 +6,13 @@ pipeline {
     }
 
     stages {
-        stage('Build') {
+        stage('Maven install') {
             steps {
                 sh 'mvn -DskipTests install'
+            }
+        }
+        stage('Make') {
+            steps {
                 sh 'make all'
             }
         }
