@@ -8,7 +8,7 @@ pipeline {
     stages {
         stage('Build') {
             steps {
-                sh 'mvn -DskipTests -X install'
+                sh 'mvn -DskipTests install'
                 sh 'make all'
             }
         }
