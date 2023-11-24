@@ -8,6 +8,7 @@ pipeline {
     stages {
         stage('Build') {
             steps {
+                sh 'mvn install'
                 sh 'make all'
             }
         }
