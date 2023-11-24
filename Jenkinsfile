@@ -9,7 +9,9 @@ pipeline {
         stage('Debug') {
             steps {
                 sh 'mvn --version'
-                sh 'make -C config-model all'
+                sh 'env'
+                sh 'pwd'
+                sh 'ls -alphs1'
             }
         }
         stage('Maven install') {
