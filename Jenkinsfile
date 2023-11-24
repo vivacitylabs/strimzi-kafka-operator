@@ -1,7 +1,8 @@
 pipeline {
     agent {
-        dockerfile {
-            label 'cross-compiler'
+        docker {
+            image 'europe-west1-docker.pkg.dev/vivacity-infrastructure/kafka-strimzi/operator-ci:3'
+            label 'my-defined-label'
         }
     }
 
