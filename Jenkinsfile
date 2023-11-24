@@ -6,6 +6,11 @@ pipeline {
     }
 
     stages {
+        stage('Debug') {
+            steps {
+                sh 'mvn --version'
+            }
+        }
         stage('Maven install') {
             steps {
                 sh 'mvn -DskipTests install'
