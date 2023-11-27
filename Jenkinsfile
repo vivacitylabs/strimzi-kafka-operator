@@ -1,7 +1,7 @@
 pipeline {
     agent {
         docker {
-            image 'europe-west1-docker.pkg.dev/vivacity-infrastructure/kafka-strimzi/operator-ci:3'
+            image 'europe-west1-docker.pkg.dev/vivacity-infrastructure/kafka-strimzi/operator-ci:4'
             label 'cross-compiler'
         }
     }
