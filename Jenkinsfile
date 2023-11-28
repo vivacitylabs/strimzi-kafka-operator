@@ -15,6 +15,7 @@ pipeline {
                 sh 'ls -al /root/.m2 || exit 0'
                 sh 'ls -al $HOME/.m2 || exit 0'
                 sh 'cat /usr/share/java/maven-3/bin/m2.conf || exit 0'
+                sh 'cat /usr/share/maven/conf/settings.xml || exit 0'
             }
         }
         stage('Maven install') {
