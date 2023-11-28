@@ -12,6 +12,9 @@ pipeline {
                 sh 'env'
                 sh 'pwd'
                 sh 'ls -alphs1'
+                sh 'ls -al /root/.m2'
+                sh 'ls -al $HOME/.m2'
+                sh 'cat /usr/share/java/maven-3/bin/m2.conf'
             }
         }
         stage('Maven install') {
