@@ -25,7 +25,7 @@ pipeline {
         }
         stage('Maven install') {
             steps {
-                sh 'export MAVEN_HOME=/usr/share/maven ; mvn -DskipTests -X install'
+                sh 'export MAVEN_HOME=/usr/share/maven ; mvn -DskipTests -X clean install'
             }
         }
         stage('Make') {
