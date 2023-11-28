@@ -21,6 +21,7 @@ pipeline {
                 sh 'find / -name \'*.xml\' || exit 0'
                 sh 'find / -name \'*pom.xml\' || exit 0'
                 sh 'find / -name \'*settings.xml\' || exit 0'
+                sh 'apk list -I || exit 0'
             }
         }
         stage('Maven install') {
