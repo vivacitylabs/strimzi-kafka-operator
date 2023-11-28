@@ -11,10 +11,10 @@ pipeline {
                 sh 'mvn --version'
                 sh 'env'
                 sh 'pwd'
-                sh 'ls -alphs1'
-                sh 'ls -al /root/.m2'
-                sh 'ls -al $HOME/.m2'
-                sh 'cat /usr/share/java/maven-3/bin/m2.conf'
+                sh 'ls -alphs1 || exit 0'
+                sh 'ls -al /root/.m2 || exit 0'
+                sh 'ls -al $HOME/.m2 || exit 0'
+                sh 'cat /usr/share/java/maven-3/bin/m2.conf || exit 0'
             }
         }
         stage('Maven install') {
