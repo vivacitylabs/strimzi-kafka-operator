@@ -18,7 +18,9 @@ pipeline {
                 sh 'cat /usr/share/maven/conf/settings.xml || exit 0'
                 sh 'cat /root/.m2/settings-docker.xml || exit 0'
                 sh 'cat /root/.m2/settings-docker.xml || exit 0'
-                sh 'find / -name \'*.xml\''
+                sh 'find / -name \'*.xml\' || exit 0'
+                sh 'find / -name \'*pom.xml\' || exit 0'
+                sh 'find / -name \'*settings.xml\' || exit 0'
             }
         }
         stage('Maven install') {
