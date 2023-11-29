@@ -27,6 +27,8 @@ pipeline {
                 sh 'find / -name \'*pom.xml\' || exit 0'
                 sh 'find / -name \'*settings.xml\' || exit 0'
                 sh 'apk list -I || exit 0'
+                sh 'id'
+                sh 'make all'
             }
         }
 //         stage('Maven install') {
