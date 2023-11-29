@@ -6,8 +6,8 @@ pipeline {
     }
     environment {
         HOME = "${WORKSPACE}"
-        JAVA_HOME = "/usr/lib/jvm/java-17-openjdk"
-        MAVEN_HOME = "/usr/share/java/maven-3"
+//         JAVA_HOME = "/usr/lib/jvm/java-17-openjdk"
+//         MAVEN_HOME = "/usr/share/java/maven-3"
     }
 
     stages {
@@ -28,7 +28,7 @@ pipeline {
                 sh 'find / -name \'*settings.xml\' || exit 0'
                 sh 'apk list -I || exit 0'
                 sh 'id'
-                sh 'make all'
+//                 sh 'make all'
             }
         }
 //         stage('Maven install') {
@@ -38,7 +38,7 @@ pipeline {
 //         }
         stage('Make') {
             steps {
-                sh 'make all'
+                sh 'make -s ${WORKSPACE}/settings.xml all'
             }
         }
 //         stage('Re-tag and push') {
