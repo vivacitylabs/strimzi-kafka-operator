@@ -6,6 +6,8 @@ pipeline {
     }
     environment {
         HOME = "${WORKSPACE}"
+        JAVA_HOME = "/usr/lib/jvm/java-17-openjdk"
+        MAVEN_HOME = "/usr/share/java/maven-3"
     }
 
     stages {
