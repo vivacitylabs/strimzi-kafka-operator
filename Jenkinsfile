@@ -24,11 +24,11 @@ pipeline {
                 sh 'apk list -I || exit 0'
             }
         }
-        stage('Maven install') {
-            steps {
-                sh 'export MAVEN_HOME=/usr/share/maven ; mvn -DskipTests -X clean install'
-            }
-        }
+//         stage('Maven install') {
+//             steps {
+//                 sh 'export MAVEN_HOME=/usr/share/maven ; mvn -DskipTests -X clean install'
+//             }
+//         }
         stage('Make') {
             steps {
                 sh 'make all'
