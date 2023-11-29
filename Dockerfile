@@ -26,10 +26,11 @@ RUN apk add --no-cache \
     yq \
     zip
 
-RUN VERSION=2.1.20 \
-    OS=linux  # or "darwin" for OSX, "windows" for Windows. \
-    ARCH=amd64  # or "386" for 32-bit OSs \
-    curl -fsSL "https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v${VERSION}/docker-credential-gcr_${OS}_${ARCH}-${VERSION}.tar.gz" \
+ENV DOCKER_CREDENTIAL_GCR_VERSION=2.1.20 \
+    DOCKER_CREDENTIAL_GCR_OS=linux \
+    DOCKER_CREDENTIAL_GCR_ARCH=amd64
+
+RUN curl -fsSL "https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v${DOCKER_CREDENTIAL_GCR_VERSION}/docker-credential-gcr_${DOCKER_CREDENTIAL_GCR_OS}_${DOCKER_CREDENTIAL_GCR_ARCH}-${DOCKER_CREDENTIAL_GCR_VERSION}.tar.gz" \
     | tar xz docker-credential-gcr \
     && chmod +x docker-credential-gcr && sudo mv docker-credential-gcr /usr/bin/ \
     && docker-credential-gcr configure-docker --registries=europe-west1-docker.pkg.dev
