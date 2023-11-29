@@ -4,6 +4,9 @@ pipeline {
             label 'cross-compiler'
         }
     }
+    environment {
+        HOME = "${WORKSPACE}"
+    }
 
     stages {
         stage('Debug') {
