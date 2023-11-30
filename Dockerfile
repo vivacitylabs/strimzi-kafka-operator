@@ -42,8 +42,8 @@ RUN curl -fsSL "https://github.com/GoogleCloudPlatform/docker-credential-gcr/rel
 
 ARG UID=1001
 ARG GID=999
+ARG WORKDIR=/run/strimzi
 
-ENV WORKDIR=/run/strimzi
 ENV MVN_ARGS="-Duser.home=${WORKDIR} -DskipTests -X" \
     HOME=${WORKDIR} \
     DOCKER_REGISTRY=europe-west1-docker.pkg.dev/vivacity-infrastructure \

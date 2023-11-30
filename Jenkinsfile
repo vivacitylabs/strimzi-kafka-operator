@@ -2,6 +2,7 @@ pipeline {
     agent {
         dockerfile {
             label 'cross-compiler'
+            additionalBuildArgs  '--build-arg GID=999 --build-arg WORKDIR=${WORKSPACE}'
         }
     }
     environment {
