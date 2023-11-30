@@ -2,7 +2,8 @@ pipeline {
     agent {
         dockerfile {
             label 'cross-compiler'
-            additionalBuildArgs  '--build-arg GID=999 --build-arg WORKDIR=${WORKSPACE}'
+            additionalBuildArgs '--build-arg GID=999 --build-arg WORKDIR=${WORKSPACE}'
+            args '-v /var/run/docker.sock:/var/run/docker.sock --privileged --user 1001:999'
         }
     }
     environment {
@@ -11,6 +12,7 @@ pipeline {
 
 //         JAVA_HOME = "/usr/lib/jvm/java-17-openjdk"
 //         MAVEN_HOME = "/usr/share/java/maven-3"
+//         MVN_HOME = "/usr/share/java/maven-3"
     }
 
     stages {
