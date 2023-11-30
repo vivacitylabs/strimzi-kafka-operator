@@ -3,7 +3,10 @@
 #FROM maven:3.9.5-eclipse-temurin-17-alpine as maven
 # FROM maven:3-eclipse-temurin-17 as maven
 
-FROM docker:24.0-dind as dind
+FROM docker:24.0-dind-rootless as dind
+#FROM docker:24.0-dind as dind
+
+USER root
 
 #COPY --from=maven /usr/share/maven /usr/share/maven
 #COPY --from=maven /usr/bin/mvn /usr/bin/mvn
@@ -15,12 +18,14 @@ RUN apk add --no-cache \
     bash \
     coreutils \
     curl \
+    findutils \
     git \
     helm \
     make \
     maven \
     openjdk17 \
     sudo \
+    shadow \
     shellcheck \
     wget \
     yq \
@@ -35,10 +40,15 @@ RUN curl -fsSL "https://github.com/GoogleCloudPlatform/docker-credential-gcr/rel
     && chmod +x docker-credential-gcr && sudo mv docker-credential-gcr /usr/bin/ \
     && docker-credential-gcr configure-docker --registries=europe-west1-docker.pkg.dev
 
+ARG UID=1001
+ARG GID=999
 
-ENV MVN_ARGS="-DskipTests -X" \
+ENV WORKDIR=/run/strimzi
+ENV MVN_ARGS="-Duser.home=${WORKDIR} -DskipTests -X" \
+    HOME=${WORKDIR} \
     DOCKER_REGISTRY=europe-west1-docker.pkg.dev/vivacity-infrastructure \
-    DOCKER_ORG=kafka-strimzi
+    DOCKER_ORG=kafka-strimzi \
+    USERNAME=strimzi
 
     #PATH=/opt/java/openjdk/bin:${PATH} \
     #MAVEN_HOME=/usr/share/maven \
@@ -52,9 +62,22 @@ ENV MVN_ARGS="-DskipTests -X" \
 #    M3_HOME=/usr/share/maven \
 #    M2_HOME=/usr/share/maven \
 
-WORKDIR /var/tmp/strimzi
+WORKDIR ${WORKDIR}
 
-COPY . .
+RUN mkdir -p ${WORKDIR} && \
+    chown ${UID}:${GID} ${WORKDIR} && \
+#    addgroup docker && \
+#    addgroup -g ${GID} ${USERNAME} && \
+    groupadd -for -g 999 docker && \
+    groupadd -for -g ${GID} ${USERNAME} && \
+    useradd -u ${UID} -g ${GID} ${USERNAME} && \
+    usermod -aG docker ${USERNAME} && \
+    addgroup ${USERNAME} docker
+#    gpasswd -a ${USERNAME} docker
+
+USER ${UID}:${GID}
+COPY --chown=${UID}:${GID} . .
+
 
 #RUN ls -al /opt/java/openjdk/bin
 #RUN pwd ; ls -al ; which java ; ls -al /opt/java/openjdk/bin/java ; /opt/java/openjdk/bin/java --version
