@@ -43,7 +43,9 @@ pipeline {
 //         }
         stage('Make') {
             steps {
-                sh 'make -s ${WORKSPACE}/settings.xml all'
+                withGCP("atrocity-gcr-pusher") {
+                    sh 'make -s ${WORKSPACE}/settings.xml all'
+                }
             }
         }
 //         stage('Re-tag and push') {
