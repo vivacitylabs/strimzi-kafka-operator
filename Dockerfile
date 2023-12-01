@@ -41,7 +41,7 @@ RUN curl -fsSL "https://github.com/GoogleCloudPlatform/docker-credential-gcr/rel
     && docker-credential-gcr configure-docker --registries=europe-west1-docker.pkg.dev
 
 # Install gcloud CLI
-RUN curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-455.0.0-linux-x86_64.tar.gz | tar xz google-cloud-sdk && \
+RUN curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-455.0.0-linux-x86_64.tar.gz | tar xz && \
     ./google-cloud-sdk/install.sh && \
     mv ./google-cloud-sdk/bin/gcloud /usr/bin
 
