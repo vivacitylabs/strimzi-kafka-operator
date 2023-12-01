@@ -40,6 +40,11 @@ RUN curl -fsSL "https://github.com/GoogleCloudPlatform/docker-credential-gcr/rel
     && chmod +x docker-credential-gcr && sudo mv docker-credential-gcr /usr/bin/ \
     && docker-credential-gcr configure-docker --registries=europe-west1-docker.pkg.dev
 
+# Install gcloud CLI
+RUN curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-455.0.0-linux-x86_64.tar.gz | tar xz google-cloud-sdk && \
+    ./google-cloud-sdk/install.sh && \
+    mv ./google-cloud-sdk/bin/gcloud /usr/bin
+
 ARG UID=1001
 ARG GID=999
 ARG WORKDIR=/run/strimzi
