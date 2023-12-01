@@ -80,7 +80,8 @@ USER ${UID}:${GID}
 
 # Install gcloud CLI
 RUN curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-455.0.0-linux-x86_64.tar.gz | tar xz && \
-    ./google-cloud-sdk/install.sh
+    ./google-cloud-sdk/install.sh && \
+    ./google-cloud-sdk/bin/gcloud init
 
 ENV PATH=${WORKDIR}/google-cloud-sdk/bin:$PATH
 
