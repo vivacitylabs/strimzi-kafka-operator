@@ -16,26 +16,26 @@ pipeline {
     }
 
     stages {
-        stage('Debug') {
-            steps {
-//                 sh 'mvn --version'
-                sh 'env'
-                sh 'pwd'
-                sh 'ls -alphs1 || exit 0'
-//                 sh 'ls -al /root/.m2 || exit 0'
-//                 sh 'ls -al $HOME/.m2 || exit 0'
-//                 sh 'cat /usr/share/java/maven-3/bin/m2.conf || exit 0'
-//                 sh 'cat /usr/share/maven/conf/settings.xml || exit 0'
-//                 sh 'cat /root/.m2/settings-docker.xml || exit 0'
-//                 sh 'cat /root/.m2/settings-docker.xml || exit 0'
-//                 sh 'find / -name \'*.xml\' || exit 0'
-//                 sh 'find / -name \'*pom.xml\' || exit 0'
-//                 sh 'find / -name \'*settings.xml\' || exit 0'
-//                 sh 'apk list -I || exit 0'
-                sh 'id'
-//                 sh 'make all'
-            }
-        }
+//         stage('Debug') {
+//             steps {
+// //                 sh 'mvn --version'
+//                 sh 'env'
+//                 sh 'pwd'
+//                 sh 'ls -alphs1 || exit 0'
+// //                 sh 'ls -al /root/.m2 || exit 0'
+// //                 sh 'ls -al $HOME/.m2 || exit 0'
+// //                 sh 'cat /usr/share/java/maven-3/bin/m2.conf || exit 0'
+// //                 sh 'cat /usr/share/maven/conf/settings.xml || exit 0'
+// //                 sh 'cat /root/.m2/settings-docker.xml || exit 0'
+// //                 sh 'cat /root/.m2/settings-docker.xml || exit 0'
+// //                 sh 'find / -name \'*.xml\' || exit 0'
+// //                 sh 'find / -name \'*pom.xml\' || exit 0'
+// //                 sh 'find / -name \'*settings.xml\' || exit 0'
+// //                 sh 'apk list -I || exit 0'
+//                 sh 'id'
+// //                 sh 'make all'
+//             }
+//         }
 //         stage('Maven install') {
 //             steps {
 //                 sh 'export MAVEN_HOME=/usr/share/maven ; mvn -DskipTests -X clean install'
@@ -44,7 +44,7 @@ pipeline {
         stage('Make') {
             steps {
                 withGCP("atrocity-gcr-pusher") {
-                    sh 'make -s ${WORKSPACE}/settings.xml all'
+                    sh 'make all'
                 }
             }
         }
