@@ -53,7 +53,7 @@ pipeline {
                     def now = new Date()
                     def default_tags = [
                         env.BRANCH_NAME,
-                        env.GIT_COMMIT
+                        env.GIT_COMMIT,
                         currentBuild.startTimeInMillis,
                         now.format("yyMMdd.HHmm", TimeZone.getTimeZone('UTC')),
                     ]
