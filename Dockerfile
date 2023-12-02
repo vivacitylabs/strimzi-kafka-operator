@@ -20,6 +20,7 @@ RUN apk add --no-cache \
     curl \
     findutils \
     git \
+    grep \
     helm \
     make \
     maven \
