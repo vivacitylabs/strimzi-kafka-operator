@@ -9,7 +9,7 @@ pipeline {
     environment {
         HOME = "${WORKSPACE}"
         WORKDIR = "${WORKSPACE}"
-        PATH = "${WORKSPACE}/google-cloud-sdk/bin:${PATH}"
+//         PATH = "${WORKSPACE}/google-cloud-sdk/bin:${PATH}"
 
 //         JAVA_HOME = "/usr/lib/jvm/java-17-openjdk"
 //         MAVEN_HOME = "/usr/share/java/maven-3"

@@ -32,9 +32,9 @@ RUN apk add --no-cache \
     yq \
     zip
 
-ENV DOCKER_CREDENTIAL_GCR_VERSION=2.1.20 \
-    DOCKER_CREDENTIAL_GCR_OS=linux \
-    DOCKER_CREDENTIAL_GCR_ARCH=amd64
+#ENV DOCKER_CREDENTIAL_GCR_VERSION=2.1.20 \
+#    DOCKER_CREDENTIAL_GCR_OS=linux \
+#    DOCKER_CREDENTIAL_GCR_ARCH=amd64
 
 #RUN #curl -fsSL "https://github.com/GoogleCloudPlatform/docker-credential-gcr/releases/download/v${DOCKER_CREDENTIAL_GCR_VERSION}/docker-credential-gcr_${DOCKER_CREDENTIAL_GCR_OS}_${DOCKER_CREDENTIAL_GCR_ARCH}-${DOCKER_CREDENTIAL_GCR_VERSION}.tar.gz" \
 #    | tar xz docker-credential-gcr \
@@ -86,7 +86,7 @@ USER ${UID}:${GID}
 #    ./google-cloud-sdk/install.sh && \
 #    ./google-cloud-sdk/bin/gcloud init
 
-ENV PATH=${WORKDIR}/google-cloud-sdk/bin:$PATH
+#ENV PATH=${WORKDIR}/google-cloud-sdk/bin:$PATH
 
 COPY --chown=${UID}:${GID} . .
 
