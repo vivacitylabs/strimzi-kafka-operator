@@ -77,8 +77,8 @@ pipeline {
               }
             }
             steps {
-                def old_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:latest"
-                def new_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:${env.BRANCH_NAME}"
+                old_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:latest"
+                new_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:${env.BRANCH_NAME}"
                 sh "docker tag ${old_tag} ${new_tag}"
                 withGCP("atrocity-gar-pusher") {
                     sh "docker push ${new_tag}"
