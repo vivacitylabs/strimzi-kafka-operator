@@ -77,9 +77,10 @@ pipeline {
                         now.format("yyMMdd.HHmm", TimeZone.getTimeZone('UTC')),
                     ]
                     tags += default_tags
+                    def original_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:latest"
                     tags.each{ tag ->
                         full_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:${tag}"
-                        sh "docker tag ${old_tag} ${full_tag}"
+                        sh "docker tag ${original_tag} ${full_tag}"
                         withGCP("atrocity-gar-pusher") {
                             sh "docker push ${full_tag}"
                         }
