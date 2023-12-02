@@ -47,6 +47,7 @@ pipeline {
 //                 sh 'curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-455.0.0-linux-x86_64.tar.gz | tar xz'
 //                 sh 'curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-455.0.0-linux-x86_64.tar.gz | tar xz && ./google-cloud-sdk/install.sh && export PATH=${WORKSPACE}/google-cloud-sdk/bin:$PATH && ./google-cloud-sdk/bin/gcloud init'
                 withGCP("atrocity-gar-pusher") {
+                    sh 'gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://europe-west1-docker.pkg.dev'
                     sh 'make all'
                 }
             }
