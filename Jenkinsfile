@@ -26,7 +26,6 @@ pipeline {
                 sh 'id'
                 script {
                     echo "TimeStamp: ${currentBuild.startTimeInMillis}"
-                    echo "TimeStamp: ${Util.getTimeSpanString(System.currentTimeMillis())}"
 
                     def now = new Date()
                     println now.format("yyMMdd.HHmm", TimeZone.getTimeZone('UTC'))
