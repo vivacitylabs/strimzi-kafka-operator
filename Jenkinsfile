@@ -6,9 +6,15 @@ pipeline {
             args '-v /var/run/docker.sock:/var/run/docker.sock --privileged --user 1001:999'
         }
     }
+    parameters {
+        string(name: 'DOCKER_REGISTRY', defaultValue: 'europe-west1-docker.pkg.dev/vivacity-infrastructure', description: 'Docker registry to push images to')
+        string(name: 'DOCKER_ORG', defaultValue: 'kafka-strimzi', description: 'Docker repository to push images to')
+    }
     environment {
         HOME = "${WORKSPACE}"
         WORKDIR = "${WORKSPACE}"
+        DOCKER_REGISTRY = params.DOCKER_REGISTRY
+        DOCKER_ORG = params.DOCKER_ORG
     }
 
     stages {
@@ -35,8 +41,10 @@ pipeline {
               }
             }
             steps {
-                old_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:latest"
-                new_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:${env.BRANCH_NAME}"
+                script {
+                    old_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:latest"
+                    new_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:${env.BRANCH_NAME}"
+                }
                 sh "docker tag ${old_tag} ${new_tag}"
                 withGCP("atrocity-gar-pusher") {
                     sh "docker push ${new_tag}"
