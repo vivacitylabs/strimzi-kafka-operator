@@ -80,9 +80,9 @@ USER ${UID}:${GID}
 
 # Install gcloud CLI
 RUN curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-455.0.0-linux-x86_64.tar.gz | tar xz && \
-    gcloud config set project vivacity-infrastructure && \
-    gcloud config set artifacts/repository kafka-strimzi && \
-    gcloud config set artifacts/location europe-west1
+    ./google-cloud-sdk/bin/gcloud config set project vivacity-infrastructure && \
+    ./google-cloud-sdk/bin/gcloud config set artifacts/repository kafka-strimzi && \
+    ./google-cloud-sdk/bin/gcloud config set artifacts/location europe-west1
 #    ./google-cloud-sdk/install.sh && \
 #    ./google-cloud-sdk/bin/gcloud init
 
