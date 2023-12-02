@@ -13,8 +13,8 @@ pipeline {
     environment {
         HOME = "${WORKSPACE}"
         WORKDIR = "${WORKSPACE}"
-        DOCKER_REGISTRY = params.DOCKER_REGISTRY
-        DOCKER_ORG = params.DOCKER_ORG
+        DOCKER_REGISTRY = "${params.DOCKER_REGISTRY}"
+        DOCKER_ORG = "${params.DOCKER_ORG}"
     }
 
     stages {
