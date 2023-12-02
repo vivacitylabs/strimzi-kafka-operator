@@ -9,6 +9,7 @@ pipeline {
     parameters {
         string(name: 'DOCKER_REGISTRY', defaultValue: 'europe-west1-docker.pkg.dev/vivacity-infrastructure', description: 'Docker registry to push images to')
         string(name: 'DOCKER_ORG', defaultValue: 'kafka-strimzi', description: 'Docker repository to push images to')
+        string(name: 'DOCKER_TAGS', defaultValue: 'latest', description: 'List (e.g. a,b,c) of strings to tag/push operator image to')
     }
     environment {
         HOME = "${WORKSPACE}"
@@ -49,12 +50,16 @@ pipeline {
             }
             steps {
                 script {
-                    old_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:latest"
-                    new_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:${env.BRANCH_NAME}"
-                }
-                sh "docker tag ${old_tag} ${new_tag}"
-                withGCP("atrocity-gar-pusher") {
-                    sh "docker push ${new_tag}"
+                    tags = params.DOCKER_TAGS.tokenize(',')
+                    tags.add(env.BRANCH_NAME)
+                    tags.each{ tag ->
+                        full_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:${$tag}"
+                        sh "docker tag ${old_tag} ${full_tag}"
+                        withGCP("atrocity-gar-pusher") {
+                            sh "docker push ${full_tag}"
+                        }
+
+                    }
                 }
             }
         }
