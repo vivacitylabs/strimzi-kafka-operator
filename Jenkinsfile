@@ -19,7 +19,7 @@ pipeline {
     }
 
     stages {
-        stage('Parallel build and push operator:latest image') {
+        stage('Build+push operator:latest') {
             parallel {
                 stage('Debug') {
                     steps {
