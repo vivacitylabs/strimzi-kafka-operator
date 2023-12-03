@@ -68,15 +68,6 @@ pipeline {
             }
             steps {
                 script {
-                    def tags = params.DOCKER_TAGS.tokenize(',')
-                    def now = new Date()
-                    def default_tags = [
-                        env.BRANCH_NAME,
-                        env.GIT_COMMIT,
-                        currentBuild.startTimeInMillis,
-                        now.format("yyMMdd.HHmm", TimeZone.getTimeZone('UTC')),
-                    ]
-                    tags += default_tags
                     def original_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:latest"
                     tags.each{ tag ->
                         full_tag = "${env.DOCKER_REGISTRY}/${env.DOCKER_ORG}/operator:${tag}"
