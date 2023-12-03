@@ -45,7 +45,7 @@ pipeline {
                                 currentBuild.startTimeInMillis,
                                 now.format("yyMMdd.HHmm", TimeZone.getTimeZone('UTC')),
                             ]
-                            def tags = params.DOCKER_TAGS.tokenize(',') + default_tags
+                            tags = params.DOCKER_TAGS.tokenize(',') + default_tags
                         }
                     }
                 }
