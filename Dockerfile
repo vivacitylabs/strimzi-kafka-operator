@@ -45,12 +45,12 @@ RUN mkdir -p ${WORKDIR} && \
 USER ${UID}:${GID}
 
 # Install gcloud CLI
-#RUN curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-455.0.0-linux-x86_64.tar.gz | tar xz && \
-#    ./google-cloud-sdk/bin/gcloud config set project vivacity-infrastructure && \
-#    ./google-cloud-sdk/bin/gcloud config set artifacts/repository kafka-strimzi && \
-#    ./google-cloud-sdk/bin/gcloud config set artifacts/location europe-west1
-#
-#ENV PATH=${WORKDIR}/google-cloud-sdk/bin:$PATH
+RUN curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-455.0.0-linux-x86_64.tar.gz | tar xz && \
+    ./google-cloud-sdk/bin/gcloud config set project vivacity-infrastructure && \
+    ./google-cloud-sdk/bin/gcloud config set artifacts/repository kafka-strimzi && \
+    ./google-cloud-sdk/bin/gcloud config set artifacts/location europe-west1
+
+ENV PATH=${WORKDIR}/google-cloud-sdk/bin:$PATH
 
 COPY --chown=${UID}:${GID} . .
 
