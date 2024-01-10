@@ -3,7 +3,7 @@ pipeline {
         dockerfile {
             label 'docker'
             additionalBuildArgs '--build-arg GID=999 --build-arg WORKDIR=${WORKSPACE}'
-            args '-v /var/run/docker.sock:/var/run/docker.sock --privileged --user 1001:999'
+            args '-v /var/run/docker.sock:/var/run/docker.sock --privileged --user 0:999'
         }
     }
     parameters {
