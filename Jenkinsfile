@@ -18,14 +18,14 @@ pipeline {
         DOCKER_ORG = "${params.DOCKER_ORG}"
     }
 
-    stages {
-        stage('Set permissions on tmp directory') {
-            steps {
-                sh 'chmod 777 -R ${WORKSPACE}@tmp'
-            }
-        }
-//         stage('Build+push operator:latest') {
-//             parallel {
+//     stages {
+//         stage('Set permissions on tmp directory') {
+//             steps {
+//                 sh 'chmod 777 -R ${WORKSPACE}@tmp'
+//             }
+//         }
+        stage('Build+push operator:latest') {
+            parallel {
                 stage('Debug') {
                     steps {
                         sh 'env'
@@ -67,8 +67,8 @@ pipeline {
                         }
                     }
                 }
-//             }
-//         }
+            }
+        }
         stage('Push extra tags') {
             when {
               expression {
