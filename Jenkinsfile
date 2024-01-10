@@ -18,7 +18,7 @@ pipeline {
         DOCKER_ORG = "${params.DOCKER_ORG}"
     }
 
-//     stages {
+    stages {
 //         stage('Set permissions on tmp directory') {
 //             steps {
 //                 sh 'chmod 777 -R ${WORKSPACE}@tmp'
