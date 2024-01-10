@@ -24,7 +24,7 @@ pipeline {
                 sh 'chmod 777 -R ${WORKSPACE}@tmp'
             }
         }
-        stage('Build+push operator:latest') {
+//         stage('Build+push operator:latest') {
 //             parallel {
                 stage('Debug') {
                     steps {
@@ -68,7 +68,7 @@ pipeline {
                     }
                 }
 //             }
-        }
+//         }
         stage('Push extra tags') {
             when {
               expression {
