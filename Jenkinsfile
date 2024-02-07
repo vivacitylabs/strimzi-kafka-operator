@@ -64,7 +64,7 @@ pipeline {
                         '''
                         withGCP("atrocity-gar-pusher") {
                             sh 'gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://europe-west1-docker.pkg.dev'
-                            sh 'DOCKER_TAG=${DOCKER_KAFKA_TAG_PREFIX} make all'
+                            sh "DOCKER_TAG=${params.DOCKER_KAFKA_TAG_PREFIX} make all"
                         }
                     }
                 }
