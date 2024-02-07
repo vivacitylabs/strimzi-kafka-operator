@@ -17,7 +17,8 @@ else
   curl http://localhost:8080/v1/ready/ --fail
 
   IFS=" "
-  broker_hostnames=( $BROKER_HOSTNAMES ) # Supplied by terraform broker containers template env var
+  # shellcheck disable=SC2153
+  read -r -a broker_hostnames <<< "$BROKER_HOSTNAMES" # Supplied by terraform broker containers template env var
   broker_hostname=${broker_hostnames[$broker_id]}
   unset IFS
 
@@ -34,5 +35,5 @@ ssl.truststore.location=$tmp_dir/truststore.jks
 ssl.truststore.password=$password
 ssl.truststore.type=JKS
 EOF
-  if [ $($kafka_root/bin/kafka-topics.sh --bootstrap-server "$broker_hostname:9093" --command-config $tmp_dir/ssl.properties --under-replicated-partitions --describe | wc -l) -eq 0 ]; then exit 0; else exit 1; fi;
+  if [ "$($kafka_root/bin/kafka-topics.sh --bootstrap-server "$broker_hostname:9093" --command-config $tmp_dir/ssl.properties --under-replicated-partitions --describe | wc -l)" -eq 0 ]; then exit 0; else exit 1; fi;
 fi
