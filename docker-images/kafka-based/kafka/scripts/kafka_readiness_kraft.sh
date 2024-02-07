@@ -19,8 +19,8 @@ else
   if [ -z ${BROKER_HOSTNAMES+x} ]; then echo "BROKER_HOSTNAMES is unset"; exit 1 ; else echo "BROKER_HOSTNAMES is set to '$BROKER_HOSTNAMES'"; fi
 
   IFS=" "
-  read -r -a broker_hostnames <<< "$BROKER_HOSTNAMES" # Supplied by terraform broker containers template env var
-  broker_hostname=${broker_hostnames[$broker_id]}
+  read -r -a broker_hostname_array <<< "$BROKER_HOSTNAMES" # Supplied by terraform broker containers template env var
+  broker_hostname=${broker_hostname_array[$broker_id]}
   unset IFS
 
   rm -f $tmp_dir/truststore.jks
