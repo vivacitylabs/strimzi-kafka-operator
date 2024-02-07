@@ -9,7 +9,8 @@ pipeline {
     parameters {
         string(name: 'DOCKER_REGISTRY', defaultValue: 'europe-west1-docker.pkg.dev/vivacity-infrastructure', description: 'Docker registry to push images to')
         string(name: 'DOCKER_ORG', defaultValue: 'kafka-strimzi', description: 'Docker repository to push images to')
-        string(name: 'DOCKER_TAGS', defaultValue: 'latest', description: 'List (e.g. a,b,c) of strings to tag/push operator image to')
+        string(name: 'DOCKER_OPERATOR_TAGS', defaultValue: 'latest', description: 'List (e.g. a,b,c) of strings to tag/push operator image to')
+        string(name: 'DOCKER_KAFKA_TAG_PREFIX', defaultValue: 'latest', description: 'Single string to tag/push kafka image to. Creates tag e.g. ${DOCKER_KAFKA_TAG_PREFIX}-kafka-${version}')
     }
     environment {
         HOME = "${WORKSPACE}"
@@ -63,7 +64,7 @@ pipeline {
                         '''
                         withGCP("atrocity-gar-pusher") {
                             sh 'gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://europe-west1-docker.pkg.dev'
-                            sh 'make all'
+                            sh 'DOCKER_TAG=${DOCKER_KAFKA_TAG_PREFIX} make all'
                         }
                     }
                 }
