@@ -16,8 +16,9 @@ else
   broker_id=$(echo "$HOSTNAME" | sed -r 's/^.*-([0-9]+$)/\1/')
   curl http://localhost:8080/v1/ready/ --fail
 
+  if [ -z ${BROKER_HOSTNAMES+x} ]; then echo "BROKER_HOSTNAMES is unset"; exit 1 ; else echo "BROKER_HOSTNAMES is set to '$BROKER_HOSTNAMES'"; fi
+
   IFS=" "
-  # shellcheck disable=SC2153
   read -r -a broker_hostnames <<< "$BROKER_HOSTNAMES" # Supplied by terraform broker containers template env var
   broker_hostname=${broker_hostnames[$broker_id]}
   unset IFS
