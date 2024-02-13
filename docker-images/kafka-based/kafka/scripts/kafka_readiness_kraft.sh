@@ -15,7 +15,6 @@ else
   tmp_dir=/tmp
   kafka_root=/opt/kafka
   password=top_secret_password123
-#  broker_id=$(echo "$HOSTNAME" | sed -r 's/^.*-([0-9]+$)/\1/')
 
   if [ -z ${BROKER_HOSTNAMES+x} ]; then echo "BROKER_HOSTNAMES is unset"; exit 1 ; else echo "BROKER_HOSTNAMES is set to '$BROKER_HOSTNAMES'"; fi
 
@@ -29,7 +28,6 @@ else
   IFS=" "
   read -r -a broker_hostname_array <<< "$BROKER_HOSTNAMES" # Supplied by terraform broker containers template env var
   broker_hostnames_with_port=$(printf "%s:9093" "${broker_hostname_array[@]}")
-#  broker_hostname=${broker_hostname_array[$broker_id]}
   broker_hostnames_with_port_csv=$(join_by ",", "${broker_hostnames_with_port[@]}")
   unset IFS
 
