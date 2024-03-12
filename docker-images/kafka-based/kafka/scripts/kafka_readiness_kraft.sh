@@ -16,15 +16,8 @@ else
   kafka_root=/opt/kafka
   password=top_secret_password123
 
-  if [ -z ${BROKER_HOSTNAMES+x} ]; then echo "BROKER_HOSTNAMES is unset"; exit 1 ; else echo "BROKER_HOSTNAMES is set to '$BROKER_HOSTNAMES'"; fi
-
-  function join_by { local IFS="$1"; shift; echo "$*"; }
-
-  IFS=" "
-  read -r -a broker_hostname_array <<< "$BROKER_HOSTNAMES" # Supplied by terraform broker containers template env var
-  unset IFS
-  broker_hostnames_with_port=("${broker_hostname_array[@]/%/:9093}")
-  broker_hostnames_with_port_csv=$(join_by "," "${broker_hostnames_with_port[@]}")
+  # BROKER_HOSTNAMES_WITH_PORT_CSV Supplied by terraform broker containers template env var
+  if [ -z ${BROKER_HOSTNAMES_WITH_PORT_CSV+x} ]; then echo "BROKER_HOSTNAMES_WITH_PORT_CSV is unset"; exit 1 ; else echo "BROKER_HOSTNAMES_WITH_PORT_CSV is set to 'BROKER_HOSTNAMES_WITH_PORT_CSV'"; fi
 
   rm -f $tmp_dir/truststore.jks
   keytool -noprompt -storepass $password -import -file $kafka_root/client-ca-certs/ca.crt -alias VivaCityECDSA_CA -keystore $tmp_dir/truststore.jks
@@ -39,5 +32,5 @@ ssl.truststore.location=$tmp_dir/truststore.jks
 ssl.truststore.password=$password
 ssl.truststore.type=JKS
 EOF
-  if [ "$($kafka_root/bin/kafka-topics.sh --bootstrap-server "${broker_hostnames_with_port_csv[@]}" --command-config $tmp_dir/ssl.properties --under-replicated-partitions --describe | wc -l)" -eq 0 ]; then exit 0; else exit 1; fi;
+  if [ "$($kafka_root/bin/kafka-topics.sh --bootstrap-server "${BROKER_HOSTNAMES_WITH_PORT_CSV}" --command-config $tmp_dir/ssl.properties --under-replicated-partitions --describe | wc -l)" -eq 0 ]; then exit 0; else exit 1; fi;
 fi
