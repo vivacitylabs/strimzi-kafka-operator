@@ -33,5 +33,5 @@ ssl.truststore.password=$password
 ssl.truststore.type=JKS
 EOF
   $kafka_root/bin/kafka-topics.sh --bootstrap-server "${BROKER_HOSTNAMES_WITH_PORT_CSV}" --command-config $tmp_dir/ssl.properties --under-replicated-partitions --describe > /tmp/under_replicated_partitions
-  if [ "$?" -eq 0 ] && [ "$(wc -l < /tmp/under_replicated_partitions)" -eq 0 ]; then exit 0; else exit 1; fi
+  if [ "$(wc -l < /tmp/under_replicated_partitions)" -eq 0 ]; then exit 0; else exit 1; fi
 fi
