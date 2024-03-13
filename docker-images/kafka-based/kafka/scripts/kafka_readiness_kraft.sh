@@ -14,18 +14,18 @@ else
 
   tmp_dir=/tmp
   kafka_root=/opt/kafka
-  password=top_secret_password123
 
   # BROKER_HOSTNAMES_WITH_PORT_CSV Supplied by terraform broker containers template env var
-  if [ -z ${BROKER_HOSTNAMES_WITH_PORT_CSV+x} ]; then echo "BROKER_HOSTNAMES_WITH_PORT_CSV is unset"; exit 1 ; else echo "BROKER_HOSTNAMES_WITH_PORT_CSV is set to 'BROKER_HOSTNAMES_WITH_PORT_CSV'"; fi
+  if [ -z ${BROKER_HOSTNAMES_WITH_PORT_CSV+x} ]; then echo "BROKER_HOSTNAMES_WITH_PORT_CSV is unset"; exit 1 ; else echo "BROKER_HOSTNAMES_WITH_PORT_CSV is set to '$BROKER_HOSTNAMES_WITH_PORT_CSV'"; fi
 
+  password=$(cat "$kafka_root/broker-certs/$HOSTNAME.password")
   rm -f $tmp_dir/truststore.jks
-  keytool -noprompt -storepass $password -import -file $kafka_root/client-ca-certs/ca.crt -alias VivaCityECDSA_CA -keystore $tmp_dir/truststore.jks
-  openssl pkcs12 -export -out $tmp_dir/keystore.p12 -inkey $kafka_root/certificates/custom-tls-9093-certs/tls.key -in $kafka_root/certificates/custom-tls-9093-certs/tls.crt -certfile $kafka_root/client-ca-certs/ca.crt -password pass:$password
+  keytool -noprompt -storepass "$password" -import -file $kafka_root/cluster-ca-certs/ca.crt -alias StrimziCA -keystore $tmp_dir/truststore.jks
+
   cat <<EOF > $tmp_dir/ssl.properties
-ssl.ca.location=$kafka_root/client-ca-certs/ca.crt
+ssl.ca.location=$kafka_root/cluster-ca-certs/ca.crt
 security.protocol=SSL
-ssl.keystore.location=$tmp_dir/keystore.p12
+ssl.keystore.location=$kafka_root/broker-certs/$HOSTNAME.p12
 ssl.keystore.password=$password
 ssl.keystore.type=PKCS12
 ssl.truststore.location=$tmp_dir/truststore.jks
