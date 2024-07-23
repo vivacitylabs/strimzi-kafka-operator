@@ -5,7 +5,7 @@
     <parent>
         <artifactId>strimzi</artifactId>
         <groupId>io.strimzi</groupId>
-        <version>0.38.0-SNAPSHOT</version>
+        <version>0.42.0</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <artifactId>systemtest</artifactId>
@@ -97,7 +97,6 @@
         <dependency>
             <groupId>io.fabric8</groupId>
             <artifactId>openshift-model</artifactId>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.fabric8</groupId>
@@ -162,18 +161,8 @@
             <scope>compile</scope>
         </dependency>
         <dependency>
-            <groupId>org.glassfish</groupId>
-            <artifactId>javax.json</artifactId>
-            <version>${javax.json.version}</version>
-        </dependency>
-        <dependency>
             <groupId>org.apache.kafka</groupId>
             <artifactId>kafka-clients</artifactId>
-            <scope>compile</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka_2.13</artifactId>
             <scope>compile</scope>
         </dependency>
         <dependency>
@@ -240,30 +229,14 @@
             <groupId>io.fabric8</groupId>
             <artifactId>openshift-model-operatorhub</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.skodjob</groupId>
+            <artifactId>test-frame-metrics-collector</artifactId>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>${maven.compiler.version}</version>
-                <executions>
-                    <execution>
-                        <id>default-compile</id>
-                        <phase>compile</phase>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
-                        <configuration>
-                            <useIncrementalCompilation>false</useIncrementalCompilation>
-                            <compilerArgs combine.self="override">
-                                <arg>-Xlint:deprecation</arg>
-                            </compilerArgs>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
@@ -271,6 +244,34 @@
                 <configuration>
                     <doclint>none</doclint>
                 </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven.dependency.version}</version>
+                <executions>
+                    <execution>
+                        <id>analyze</id>
+                        <goals>
+                            <goal>analyze-only</goal>
+                        </goals>
+                        <configuration>
+                            <failOnWarning>true</failOnWarning>
+                            <ignoredUnusedDeclaredDependencies>
+                                <!-- Used as annotation processed at compile time -->
+                                <ignoredUnusedDeclaredDependency>io.sundr:builder-annotations</ignoredUnusedDeclaredDependency>
+                                <!-- Fabric8 Kubernetes Client and HttpClient are required by the ExamplesTest -->
+                                <ignoredUnusedDeclaredDependency>io.fabric8:kubernetes-client</ignoredUnusedDeclaredDependency>
+                                <ignoredUnusedDeclaredDependency>io.fabric8:kubernetes-httpclient-jdk</ignoredUnusedDeclaredDependency>
+                                <ignoredUnusedDeclaredDependency>io.fabric8:openshift-client</ignoredUnusedDeclaredDependency>
+                                <!-- Needed for logging in tests -->
+                                <ignoredUnusedDeclaredDependency>org.apache.logging.log4j:log4j-core</ignoredUnusedDeclaredDependency>
+                                <!-- Needed for logging in tests using the Kubernetes Client (uses SLF4J) -->
+                                <ignoredUnusedDeclaredDependency>org.apache.logging.log4j:log4j-slf4j-impl</ignoredUnusedDeclaredDependency>
+                            </ignoredUnusedDeclaredDependencies>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
         <resources>
@@ -288,17 +289,6 @@
     </build>
 
     <profiles>
-
-        <profile>
-            <id>none</id>
-            <properties>
-                <skipITs>true</skipITs>
-            </properties>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-        </profile>
-
         <profile>
             <id>all</id>
             <properties>
@@ -339,18 +329,18 @@
         </profile>
 
         <profile>
-            <id>bridge</id>
-            <properties>
-                <skipTests>false</skipTests>
-                <groups>bridge</groups>
-            </properties>
-        </profile>
-
-        <profile>
             <id>upgrade</id>
             <properties>
                 <skipTests>false</skipTests>
                 <groups>upgrade</groups>
+            </properties>
+        </profile>
+
+        <profile>
+            <id>kraft_upgrade</id>
+            <properties>
+                <skipTests>false</skipTests>
+                <groups>kraftupgrade</groups>
             </properties>
         </profile>
 
@@ -375,175 +365,29 @@
         </profile>
 
         <profile>
-            <id>components</id>
+            <id>brokers-and-security</id>
             <properties>
                 <skipTests>false</skipTests>
                 <groups>regression</groups>
                 <it.test>
                     kafka/**/*ST,
-                    bridge/**/*ST,
-                    cruisecontrol/**/*ST,
-                    mirrormaker/**/*ST,
-                    connect/**/*ST,
-                    security/**/*ST,
-                    rollingupdate/**/*ST,
-                    watcher/**/*ST,
-                    rollingupdate/**/*ST,
-                    tracing/**/*ST
+                    security/**/*ST
                 </it.test>
             </properties>
         </profile>
 
         <profile>
-            <id>azp_kafka_oauth</id>
-            <properties>
-                <skipTests>false</skipTests>
-                <groups>regression,kafkasmoke</groups>
-                <it.test>
-                    kafka/**/*ST,
-                    !kafka/listeners/*ST,
-                    !kafka/dynamicconfiguration/**/*ST,
-                    !kafka/ConfigProviderST,
-                    security/oauth/**/*ST,
-                    security/custom/*ST,
-                    security/OpaIntegrationST
-                </it.test>
-            </properties>
-        </profile>
-
-        <profile>
-            <id>azp_security</id>
-            <properties>
-                <skipTests>false</skipTests>
-                <groups>regression</groups>
-                <it.test>
-                    security/**/*ST,
-                    !security/oauth/**/*ST,
-                    !security/custom/*ST,
-                    !security/OpaIntegrationST
-                </it.test>
-            </properties>
-        </profile>
-
-        <profile>
-            <id>azp_dynconfig_listeners_tracing_watcher</id>
-            <properties>
-                <skipTests>false</skipTests>
-                <groups>regression</groups>
-                <it.test>
-                    kafka/dynamicconfiguration/**/*ST,
-                    kafka/listeners/*ST,
-                    kafka/ConfigProviderST,
-                    operators/topic/ThrottlingQuotaST,
-                    tracing/**/*ST,
-                    watcher/**/*ST
-                </it.test>
-            </properties>
-        </profile>
-
-        <profile>
-            <id>azp_rolling_update_bridge</id>
-            <properties>
-                <skipTests>false</skipTests>
-                <groups>regression</groups>
-                <it.test>
-                    rollingupdate/**/*ST,
-                    bridge/**/*ST
-                </it.test>
-            </properties>
-        </profile>
-
-        <profile>
-            <id>azp_connect_mirrormaker</id>
-            <properties>
-                <skipTests>false</skipTests>
-                <groups>regression</groups>
-                <it.test>
-                    connect/**/*ST,
-                    mirrormaker/**/*ST
-                </it.test>
-            </properties>
-        </profile>
-
-        <profile>
-            <id>azp_operators</id>
-            <properties>
-                <skipTests>false</skipTests>
-                <groups>regression</groups>
-                <it.test>
-                    operators/**/*ST,
-                    !operators/topic/ThrottlingQuotaST
-                </it.test>
-            </properties>
-        </profile>
-
-        <profile>
-            <id>azp_remaining</id>
+            <id>operands</id>
             <properties>
                 <skipTests>false</skipTests>
                 <groups>regression</groups>
                 <it.test>
                     !kafka/**/*ST,
-                    !mirrormaker/**/*ST,
-                    !connect/**/*ST,
                     !security/**/*ST,
                     !operators/**/*ST,
-                    !rollingupdate/**/*ST,
-                    !watcher/**/*ST,
-                    !tracing/**/*ST,
-                    !bridge/**/*ST
-                </it.test>
-            </properties>
-        </profile>
-
-        <profile>
-            <id>azp_rbac_remaining</id>
-            <properties>
-                <skipTests>false</skipTests>
-                <groups>regression</groups>
-                <it.test>
-                    !kafka/**/*ST,
-                    !mirrormaker/**/*ST,
-                    !connect/**/*ST,
-                    !security/**/*ST,
-                    !operators/**/*ST,
-                    !rollingupdate/**/*ST,
-                    !watcher/**/*ST,
-                    !tracing/**/*ST,
-                    !LoggingChangeST
-                </it.test>
-            </properties>
-        </profile>
-
-        <profile>
-            <id>azp_upgrade</id>
-            <properties>
-                <skipTests>false</skipTests>
-                <groups>upgrade</groups>
-                <it.test>
-                    !KafkaUpgradeDowngradeST
-                </it.test>
-            </properties>
-        </profile>
-
-        <profile>
-            <id>azp_kafka_upgrade</id>
-            <properties>
-                <skipTests>false</skipTests>
-                <groups>upgrade</groups>
-                <it.test>
-                    KafkaUpgradeDowngradeST
-                </it.test>
-            </properties>
-        </profile>
-
-        <profile>
-            <id>azp_bridge</id>
-            <properties>
-                <skipTests>false</skipTests>
-                <groups>bridge</groups>
-                <it.test>
-                    !olm/**/*ST,
+                    !log/**/*ST,
+                    !metrics/**/*ST,
+                    !specific/**/*ST
                 </it.test>
             </properties>
         </profile>
@@ -559,14 +403,24 @@
         </profile>
 
         <profile>
-            <id>olm_acceptance_upgrade</id>
+            <id>performance</id>
             <properties>
                 <skipTests>false</skipTests>
                 <groups>
-                    acceptance,
-                    olm,
-                    olmupgrade
+                    performance
                 </groups>
+                <it.test>performance/**/*Performance*</it.test>
+            </properties>
+        </profile>
+
+        <profile>
+            <id>performance-capacity</id>
+            <properties>
+                <skipTests>false</skipTests>
+                <groups>
+                    performance-capacity
+                </groups>
+                <it.test>performance/**/*Performance*</it.test>
             </properties>
         </profile>
 

@@ -79,9 +79,19 @@ public enum CruiseControlConfigurationParameters {
     BROKER_METRIC_TOPIC_NAME("broker.metric.sample.store.topic"),
 
     /**
+     * Replication factor of Kafka sample store topics
+     */
+    SAMPLE_STORE_TOPIC_REPLICATION_FACTOR("sample.store.topic.replication.factor"),
+
+    /**
      * Metrics reporter topic
      */
     METRIC_REPORTER_TOPIC_NAME("metric.reporter.topic"),
+
+    /**
+     * Capacity config file
+     */
+    CAPACITY_CONFIG_FILE("capacity.config.file"),
 
     // Metrics reporter configurations
     /**
@@ -141,7 +151,7 @@ public enum CruiseControlConfigurationParameters {
     METRICS_TOPIC_NAME("cruise.control.metrics.topic"),
 
     /**
-     * Should the Cruise Control topic ne auto.created
+     * Should the Cruise Control topic be auto.created
      */
     METRICS_TOPIC_AUTO_CREATE("cruise.control.metrics.topic.auto.create"),
 

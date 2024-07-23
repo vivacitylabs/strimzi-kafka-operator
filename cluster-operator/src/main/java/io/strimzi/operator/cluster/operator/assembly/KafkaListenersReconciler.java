@@ -8,34 +8,34 @@ import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.networking.v1.Ingress;
 import io.fabric8.openshift.api.model.Route;
-import io.strimzi.api.kafka.model.CertAndKeySecretSource;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.listener.NodeAddressType;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListener;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerConfigurationBroker;
-import io.strimzi.api.kafka.model.status.ListenerAddressBuilder;
-import io.strimzi.api.kafka.model.status.ListenerStatus;
-import io.strimzi.api.kafka.model.status.ListenerStatusBuilder;
+import io.strimzi.api.kafka.model.common.CertAndKeySecretSource;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListener;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerConfigurationBroker;
+import io.strimzi.api.kafka.model.kafka.listener.ListenerAddressBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.ListenerStatus;
+import io.strimzi.api.kafka.model.kafka.listener.ListenerStatusBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.NodeAddressType;
 import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
 import io.strimzi.operator.cluster.model.CertUtils;
 import io.strimzi.operator.cluster.model.ClusterCa;
 import io.strimzi.operator.cluster.model.DnsNameGenerator;
-import io.strimzi.operator.common.model.InvalidResourceException;
 import io.strimzi.operator.cluster.model.KafkaCluster;
 import io.strimzi.operator.cluster.model.ListenersUtils;
 import io.strimzi.operator.cluster.model.ModelUtils;
 import io.strimzi.operator.cluster.model.NodeRef;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.IngressOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.RouteOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.SecretOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.ServiceOperator;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.ReconciliationLogger;
-import io.strimzi.operator.common.operator.resource.IngressOperator;
-import io.strimzi.operator.common.operator.resource.RouteOperator;
-import io.strimzi.operator.common.operator.resource.SecretOperator;
-import io.strimzi.operator.common.operator.resource.ServiceOperator;
+import io.strimzi.operator.common.Util;
+import io.strimzi.operator.common.model.InvalidResourceException;
 import io.vertx.core.Future;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -275,7 +275,7 @@ public class KafkaListenersReconciler {
             result.listenerStatuses.add(ls);
 
             // Set advertised hostnames and ports
-            for (NodeRef node : kafka.nodes()) {
+            for (NodeRef node : kafka.brokerNodes()) {
                 String brokerAddress;
 
                 if (useServiceDnsDomain) {
@@ -748,8 +748,8 @@ public class KafkaListenersReconciler {
                                 } else if (!secret.getData().containsKey(customCert.getKey())) {
                                     errors.add("Secret " + customCert.getSecretName() + " does not contain custom certificate private key under the key " + customCert.getKey() + ".");
                                 } else  {
-                                    byte[] publicKeyBytes = Base64.getDecoder().decode(secret.getData().get(customCert.getCertificate()));
-                                    customListenerCertificates.put(listener.getName(), new String(publicKeyBytes, StandardCharsets.US_ASCII));
+                                    String publicKey = Util.decodeFromBase64(secret.getData().get(customCert.getCertificate()));
+                                    customListenerCertificates.put(listener.getName(), publicKey);
                                     result.customListenerCertificateThumbprints.put(listener.getName(), CertUtils.getCertificateShortThumbprint(secret, customCert.getCertificate()));
                                 }
                             } else {

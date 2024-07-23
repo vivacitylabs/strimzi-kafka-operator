@@ -4,16 +4,11 @@
  */
 package io.strimzi.operator.cluster.operator.resource;
 
-import io.fabric8.kubernetes.api.model.Pod;
-import io.fabric8.kubernetes.api.model.PodBuilder;
-import io.fabric8.kubernetes.api.model.Secret;
-import io.fabric8.kubernetes.api.model.SecretBuilder;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.operator.common.model.Ca;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
 import io.strimzi.operator.common.BackOff;
 import io.strimzi.operator.common.Reconciliation;
-import io.strimzi.operator.common.model.Labels;
-import io.strimzi.operator.common.operator.resource.SecretOperator;
+import io.strimzi.operator.common.auth.PemAuthIdentity;
+import io.strimzi.operator.common.auth.PemTrustSet;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
 import io.vertx.core.Vertx;
@@ -31,7 +26,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mockito;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,16 +38,11 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
-import static io.strimzi.test.TestUtils.map;
+import static io.strimzi.operator.common.auth.TlsPemIdentity.DUMMY_IDENTITY;
 import static java.lang.Integer.parseInt;
-import static java.util.Collections.emptyMap;
 import static java.util.Collections.emptySet;
-import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 @ExtendWith(VertxExtension.class)
 public class ZookeeperLeaderFinderTest {
@@ -88,10 +77,11 @@ public class ZookeeperLeaderFinderTest {
         }
 
         @Override
-        NetClientOptions clientOptions(Reconciliation reconciliation, Secret coCertKeySecret, Secret clusterCaCertificateSecret) {
+        NetClientOptions clientOptions(PemTrustSet zkCaTrustSet, PemAuthIdentity coAuthIdentity) {
             return new NetClientOptions()
                     .setKeyCertOptions(coCertificate.keyCertOptions())
                     .setTrustOptions(zkCertificate.trustOptions())
+                    .setHostnameVerificationAlgorithm("")
                     .setSsl(true);
         }
 
@@ -198,10 +188,6 @@ public class ZookeeperLeaderFinderTest {
         }
     }
 
-    Secret dummySecret() {
-        return new Secret();
-    }
-
     BackOff backoff() {
         return new BackOff(50, 2, MAX_ATTEMPTS);
     }
@@ -215,10 +201,10 @@ public class ZookeeperLeaderFinderTest {
     }
 
     @Test
-    public void test0PodsClusterReturnsUnknowLeader(VertxTestContext context) {
+    public void test0PodsClusterReturnsUnknownLeader(VertxTestContext context) {
         ZookeeperLeaderFinder finder = new ZookeeperLeaderFinder(vertx, this::backoff);
         Checkpoint a = context.checkpoint();
-        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, emptySet(), dummySecret(), dummySecret())
+        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, emptySet(), DUMMY_IDENTITY)
             .onComplete(context.succeeding(leader -> {
                 context.verify(() -> assertThat(leader, is(ZookeeperLeaderFinder.UNKNOWN_LEADER)));
                 a.flag();
@@ -230,84 +216,11 @@ public class ZookeeperLeaderFinderTest {
         ZookeeperLeaderFinder finder = new ZookeeperLeaderFinder(vertx, this::backoff);
         Checkpoint a = context.checkpoint();
         int firstPodIndex = 0;
-        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, Set.of(createPodWithId(firstPodIndex)), dummySecret(), dummySecret())
+        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, Set.of(createPodWithId(firstPodIndex)), DUMMY_IDENTITY)
             .onComplete(context.succeeding(leader -> {
-                context.verify(() -> assertThat(leader, is("my-cluster-kafka-0")));
+                context.verify(() -> assertThat(leader, is("my-cluster-zookeeper-0")));
                 a.flag();
             }));
-    }
-
-    @Test
-    public void testSecretWithMissingClusterOperatorKeyThrowsException(VertxTestContext context) {
-        SecretOperator mock = mock(SecretOperator.class);
-        ZookeeperLeaderFinder finder = new ZookeeperLeaderFinder(vertx, this::backoff);
-
-        Mockito.reset(mock);
-        when(mock.getAsync(eq(NAMESPACE), eq(KafkaResources.clusterCaCertificateSecretName(CLUSTER))))
-            .thenReturn(Future.succeededFuture(
-                    new SecretBuilder()
-                            .withNewMetadata()
-                                .withName(KafkaResources.clusterCaCertificateSecretName(CLUSTER))
-                                .withNamespace(NAMESPACE)
-                            .endMetadata()
-                            .withData(emptyMap())
-                            .build()));
-
-        Secret secretWithMissingClusterOperatorKey = new SecretBuilder()
-                .withNewMetadata()
-                .withName(KafkaResources.secretName(CLUSTER))
-                .withNamespace(NAMESPACE)
-                .endMetadata()
-                .withData(emptyMap())
-                .build();
-
-        Checkpoint a = context.checkpoint();
-
-        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, treeSet(createPodWithId(0), createPodWithId(1)), dummySecret(), secretWithMissingClusterOperatorKey)
-            .onComplete(context.failing(e -> context.verify(() -> {
-                assertThat(e, instanceOf(RuntimeException.class));
-                assertThat(e.getMessage(),
-                        is("The Secret testns/testcluster-cluster-operator-certs is missing the key cluster-operator.key"));
-                a.flag();
-            })));
-
-    }
-
-    @Test
-    public void testSecretsCorrupted(VertxTestContext context) {
-        SecretOperator mock = mock(SecretOperator.class);
-        ZookeeperLeaderFinder finder = new ZookeeperLeaderFinder(vertx, this::backoff);
-
-        when(mock.getAsync(eq(NAMESPACE), eq(KafkaResources.clusterCaCertificateSecretName(CLUSTER))))
-                .thenReturn(Future.succeededFuture(
-                        new SecretBuilder()
-                                .withNewMetadata()
-                                .withName(KafkaResources.clusterCaCertificateSecretName(CLUSTER))
-                                .withNamespace(NAMESPACE)
-                                .endMetadata()
-                                .withData(map(Ca.CA_CRT, "notacert"))
-                                .build()));
-
-        Secret secretWithBadCertificate = new SecretBuilder()
-                .withNewMetadata()
-                .withName(KafkaResources.secretName(CLUSTER))
-                .withNamespace(NAMESPACE)
-                .endMetadata()
-                .withData(map("cluster-operator.key", "notacert",
-                        "cluster-operator.crt", "notacert",
-                        "cluster-operator.p12", "notatruststore",
-                        "cluster-operator.password", "notapassword"))
-                .build();
-
-        Checkpoint a = context.checkpoint();
-
-        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, treeSet(createPodWithId(0), createPodWithId(1)), dummySecret(), secretWithBadCertificate)
-                .onComplete(context.failing(e -> context.verify(() -> {
-                    assertThat(e, instanceOf(RuntimeException.class));
-                    assertThat(e.getMessage(), is("Bad/corrupt certificate found in data.cluster-operator\\.crt of Secret testcluster-cluster-operator-certs in namespace testns"));
-                    a.flag();
-                })));
-
     }
 
     @Test
@@ -317,7 +230,7 @@ public class ZookeeperLeaderFinderTest {
         ZookeeperLeaderFinder finder = new TestingZookeeperLeaderFinder(this::backoff, ports);
 
         Checkpoint a = context.checkpoint();
-        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, treeSet(createPodWithId(0), createPodWithId(1)), dummySecret(), dummySecret())
+        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, treeSet(createPodWithId(0), createPodWithId(1)), DUMMY_IDENTITY)
             .onComplete(context.succeeding(leader -> context.verify(() -> {
                 assertThat(leader, is(ZookeeperLeaderFinder.UNKNOWN_LEADER));
                 for (FakeZk zk : zks) {
@@ -336,7 +249,7 @@ public class ZookeeperLeaderFinderTest {
         ZookeeperLeaderFinder finder = new TestingZookeeperLeaderFinder(this::backoff, ports);
 
         Checkpoint a = context.checkpoint();
-        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, treeSet(createPodWithId(0), createPodWithId(1)), dummySecret(), dummySecret())
+        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, treeSet(createPodWithId(0), createPodWithId(1)), DUMMY_IDENTITY)
             .onComplete(context.succeeding(leader -> context.verify(() -> {
                 assertThat(leader, is(ZookeeperLeaderFinder.UNKNOWN_LEADER));
                 for (FakeZk zk : zks) {
@@ -349,7 +262,7 @@ public class ZookeeperLeaderFinderTest {
     @Test
     public void testFinderHandlesFailureByLeaderFoundOnThirdAttempt(VertxTestContext context) throws InterruptedException {
         int desiredLeaderId = 1;
-        String leaderPod = "my-cluster-kafka-1";
+        String leaderPod = "my-cluster-zookeeper-1";
         int succeedOnAttempt = 2;
 
         int[] ports = startMockZks(context, 2, (id, attempt) -> attempt == succeedOnAttempt && id == desiredLeaderId);
@@ -357,7 +270,7 @@ public class ZookeeperLeaderFinderTest {
         TestingZookeeperLeaderFinder finder = new TestingZookeeperLeaderFinder(this::backoff, ports);
 
         Checkpoint a = context.checkpoint();
-        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, treeSet(createPodWithId(0), createPodWithId(1)), dummySecret(), dummySecret())
+        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, treeSet(createPodWithId(0), createPodWithId(1)), DUMMY_IDENTITY)
             .onComplete(context.succeeding(leader -> context.verify(() -> {
                 assertThat(leader, is(leaderPod));
                 for (FakeZk zk : zks) {
@@ -370,14 +283,14 @@ public class ZookeeperLeaderFinderTest {
     @Test
     public void testLeaderFoundFirstAttempt(VertxTestContext context) throws InterruptedException {
         int leader = 1;
-        String leaderPod = "my-cluster-kafka-1";
+        String leaderPod = "my-cluster-zookeeper-1";
 
         int[] ports = startMockZks(context, 2, (id, attempt) -> id == leader);
 
         ZookeeperLeaderFinder finder = new TestingZookeeperLeaderFinder(this::backoff, ports);
 
         Checkpoint a = context.checkpoint();
-        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, treeSet(createPodWithId(0), createPodWithId(1)), dummySecret(), dummySecret())
+        finder.findZookeeperLeader(Reconciliation.DUMMY_RECONCILIATION, treeSet(createPodWithId(0), createPodWithId(1)), DUMMY_IDENTITY)
             .onComplete(context.succeeding(l -> context.verify(() -> {
                 assertThat(l, is(leaderPod));
                 for (FakeZk zk : zks) {
@@ -388,19 +301,11 @@ public class ZookeeperLeaderFinderTest {
     }
 
     String createPodWithId(int id) {
-        return "my-cluster-kafka-" + id;
+        return "my-cluster-zookeeper-" + id;
     }
 
     @Test
     public void testGetHostReturnsCorrectHostForGivenPod() {
-        Pod pod = new PodBuilder()
-                .withNewMetadata()
-                    .withName(KafkaResources.zookeeperPodName("my-cluster", 3))
-                    .withNamespace("myproject")
-                    .addToLabels(Labels.STRIMZI_CLUSTER_LABEL, "my-cluster")
-                .endMetadata()
-            .build();
-
         assertThat(new ZookeeperLeaderFinder(vertx, this::backoff).host(new Reconciliation("test", "Kafka", "myproject", "my-cluster"), KafkaResources.zookeeperPodName("my-cluster", 3)),
                 is("my-cluster-zookeeper-3.my-cluster-zookeeper-nodes.myproject.svc.cluster.local"));
     }

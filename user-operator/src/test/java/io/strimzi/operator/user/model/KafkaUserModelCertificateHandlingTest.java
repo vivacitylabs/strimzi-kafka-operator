@@ -8,10 +8,10 @@ import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.SecretBuilder;
 import io.strimzi.certs.CertAndKey;
 import io.strimzi.certs.CertManager;
-import io.strimzi.operator.common.model.Ca;
-import io.strimzi.operator.common.model.PasswordGenerator;
 import io.strimzi.operator.common.Reconciliation;
+import io.strimzi.operator.common.model.Ca;
 import io.strimzi.operator.common.model.Labels;
+import io.strimzi.operator.common.model.PasswordGenerator;
 import io.strimzi.operator.common.operator.MockCertManager;
 import io.strimzi.operator.user.ResourceUtils;
 import org.junit.jupiter.api.Test;
@@ -54,8 +54,8 @@ public class KafkaUserModelCertificateHandlingTest {
             "T/DiI+A2t2dGukf5qfzqgiXkq4XqM6+p0zY1Cv0=\n" +
             "-----END CERTIFICATE-----\n";
 
-    private final Secret clientsCaCert = ResourceUtils.createClientsCaCertSecret();
-    private final Secret clientsCaKey = ResourceUtils.createClientsCaKeySecret();
+    private final Secret clientsCaCert = ResourceUtils.createClientsCaCertSecret(ResourceUtils.NAMESPACE);
+    private final Secret clientsCaKey = ResourceUtils.createClientsCaKeySecret(ResourceUtils.NAMESPACE);
     private final CertManager mockCertManager = new MockCertManager();
     private final PasswordGenerator passwordGenerator = new PasswordGenerator(10, "a", "a");
 

@@ -46,8 +46,8 @@ public class PlatformFeaturesAvailability implements PlatformFeatures {
         Future<VersionInfo> futureVersion = getVersionInfo(vertx, client);
 
         futureVersion.compose(versionInfo -> {
-            String major = versionInfo.getMajor().equals("") ? Integer.toString(KubernetesVersion.MINIMAL_SUPPORTED_MAJOR) : versionInfo.getMajor();
-            String minor = versionInfo.getMinor().equals("") ? Integer.toString(KubernetesVersion.MINIMAL_SUPPORTED_MINOR) : versionInfo.getMinor();
+            String major = versionInfo.getMajor().isEmpty() ? Integer.toString(KubernetesVersion.MINIMAL_SUPPORTED_MAJOR) : versionInfo.getMajor();
+            String minor = versionInfo.getMinor().isEmpty() ? Integer.toString(KubernetesVersion.MINIMAL_SUPPORTED_MINOR) : versionInfo.getMinor();
             pfa.setKubernetesVersion(new KubernetesVersion(Integer.parseInt(major.split("\\D")[0]), Integer.parseInt(minor.split("\\D")[0])));
 
             return checkApiAvailability(vertx, client, "route.openshift.io", "v1");
@@ -131,24 +131,18 @@ public class PlatformFeaturesAvailability implements PlatformFeatures {
     }
 
     private static Future<VersionInfo> getVersionInfoFromKubernetes(Vertx vertx, KubernetesClient client)   {
-        Promise<VersionInfo> promise = Promise.promise();
-
-        vertx.executeBlocking(request -> {
+        return vertx.executeBlocking(() -> {
             try {
-                request.complete(client.getKubernetesVersion());
+                return client.getKubernetesVersion();
             } catch (Exception e) {
                 LOGGER.error("Detection of Kubernetes version failed.", e);
-                request.fail(e);
+                throw e;
             }
-        }, promise);
-
-        return promise.future();
+        });
     }
 
     private static Future<Boolean> checkApiAvailability(Vertx vertx, KubernetesClient client, String group, String version)   {
-        Promise<Boolean> promise = Promise.promise();
-
-        vertx.executeBlocking(request -> {
+        return vertx.executeBlocking(() -> {
             try {
                 APIGroup apiGroup = client.getApiGroup(group);
                 boolean supported;
@@ -160,20 +154,18 @@ public class PlatformFeaturesAvailability implements PlatformFeatures {
                 }
 
                 LOGGER.warn("API Group {} is {}supported", group, supported ? "" : "not ");
-                request.complete(supported);
+                return supported;
             } catch (Exception e) {
                 LOGGER.error("Detection of API availability failed.", e);
-                request.fail(e);
+                throw e;
             }
-        }, promise);
-
-        return promise.future();
+        });
     }
 
     private PlatformFeaturesAvailability() {}
 
     /**
-     * This constructor is used in tests. It sets all OpenShift APIs to true or false depending on the isOpenShift paremeter
+     * This constructor is used in tests. It sets all OpenShift APIs to true or false depending on the isOpenShift parameter
      *
      * @param isOpenShift           Set all OpenShift APIs to true
      * @param kubernetesVersion     Set the Kubernetes version

@@ -4,8 +4,8 @@
  */
 package io.strimzi.operator.cluster.operator.resource;
 
-import io.fabric8.kubernetes.api.model.Secret;
 import io.strimzi.operator.common.Reconciliation;
+import io.strimzi.operator.common.auth.TlsPemIdentity;
 import io.vertx.core.Vertx;
 
 import java.util.function.Function;
@@ -14,7 +14,7 @@ import java.util.function.Function;
  * Class to provide the real ZookeeperScaler which connects to actual Zookeeper
  */
 public class DefaultZookeeperScalerProvider implements ZookeeperScalerProvider {
-    private static ZooKeeperAdminProvider zooAdminProvider = new DefaultZooKeeperAdminProvider();
+    private static final ZooKeeperAdminProvider ZOO_ADMIN_PROVIDER = new DefaultZooKeeperAdminProvider();
 
     /**
      * Creates an instance of ZookeeperScaler
@@ -23,16 +23,15 @@ public class DefaultZookeeperScalerProvider implements ZookeeperScalerProvider {
      * @param vertx                         Vertx instance
      * @param zookeeperConnectionString     Connection string to connect to the right Zookeeper
      * @param zkNodeAddress                 Function for generating the Zookeeper node addresses
-     * @param clusterCaCertSecret           Secret with Kafka cluster CA public key
-     * @param coKeySecret                   Secret with Cluster Operator public and private key
+     * @param tlsPemIdentity                Trust set and identity for TLS client authentication for connecting to ZooKeeper
      * @param operationTimeoutMs            Operation timeout
      *
      * @return  ZookeeperScaler instance
      */
     public ZookeeperScaler createZookeeperScaler(Reconciliation reconciliation, Vertx vertx, String zookeeperConnectionString,
-                                                 Function<Integer, String> zkNodeAddress, Secret clusterCaCertSecret,
-                                                 Secret coKeySecret, long operationTimeoutMs, int zkAdminSessionTimeoutMs) {
-        return new ZookeeperScaler(reconciliation, vertx, zooAdminProvider, zookeeperConnectionString, zkNodeAddress,
-                clusterCaCertSecret, coKeySecret, operationTimeoutMs, zkAdminSessionTimeoutMs);
+                                                 Function<Integer, String> zkNodeAddress, TlsPemIdentity tlsPemIdentity,
+                                                 long operationTimeoutMs, int zkAdminSessionTimeoutMs) {
+        return new ZookeeperScaler(reconciliation, vertx, ZOO_ADMIN_PROVIDER, zookeeperConnectionString, zkNodeAddress,
+                tlsPemIdentity, operationTimeoutMs, zkAdminSessionTimeoutMs);
     }
 }

@@ -6,7 +6,8 @@ package io.strimzi.systemtest.kafkaclients.clientproperties;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.fabric8.kubernetes.api.model.Secret;
-import io.strimzi.systemtest.Constants;
+import io.strimzi.operator.common.Util;
+import io.strimzi.systemtest.TestConstants;
 import io.strimzi.systemtest.resources.ResourceManager;
 import io.strimzi.test.TestUtils;
 import io.strimzi.test.executor.Exec;
@@ -30,7 +31,6 @@ import java.security.NoSuchAlgorithmException;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
-import java.util.Base64;
 import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -170,15 +170,15 @@ abstract public class AbstractKafkaClientProperties<C extends AbstractKafkaClien
                         ts.load(null, tsPassword.toCharArray());
                         CertificateFactory cf = CertificateFactory.getInstance("X.509");
                         String clusterCaCert = kubeClient().getSecret(namespaceName, caSecretName).getData().get("ca.crt");
-                        Certificate cert = cf.generateCertificate(new ByteArrayInputStream(Base64.getDecoder().decode(clusterCaCert)));
+                        Certificate cert = cf.generateCertificate(new ByteArrayInputStream(Util.decodeBytesFromBase64(clusterCaCert)));
                         ts.setCertificateEntry("ca.crt", cert);
                         try (FileOutputStream tsOs = new FileOutputStream(tsFile)) {
                             ts.store(tsOs, tsPassword.toCharArray());
                         }
                     } else {
-                        tsPassword = new String(Base64.getDecoder().decode(clusterCaCertSecret.getData().get("ca.password")), StandardCharsets.US_ASCII);
+                        tsPassword = Util.decodeFromBase64(clusterCaCertSecret.getData().get("ca.password"));
                         String truststore = clusterCaCertSecret.getData().get("ca.p12");
-                        Files.write(tsFile.toPath(), Base64.getDecoder().decode(truststore));
+                        Files.write(tsFile.toPath(), Util.decodeBytesFromBase64(truststore));
                     }
                     properties.setProperty(SslConfigs.SSL_TRUSTSTORE_TYPE_CONFIG, ts.getType());
                     properties.setProperty(SslConfigs.SSL_TRUSTSTORE_PASSWORD_CONFIG, tsPassword);
@@ -191,7 +191,7 @@ abstract public class AbstractKafkaClientProperties<C extends AbstractKafkaClien
 
                     properties.setProperty(SaslConfigs.SASL_MECHANISM, "SCRAM-SHA-512");
                     Secret userSecret = kubeClient().getSecret(namespaceName, kafkaUsername);
-                    String password = new String(Base64.getDecoder().decode(userSecret.getData().get("password")), StandardCharsets.UTF_8);
+                    String password = Util.decodeFromBase64(userSecret.getData().get("password"), StandardCharsets.UTF_8);
 
                     String jaasTemplate = "org.apache.kafka.common.security.scram.ScramLoginModule required username=\"%s\" password=\"%s\";";
                     String jaasCfg = String.format(jaasTemplate, kafkaUsername, password);
@@ -210,9 +210,9 @@ abstract public class AbstractKafkaClientProperties<C extends AbstractKafkaClien
                     properties.setProperty(SslConfigs.SSL_KEYSTORE_PASSWORD_CONFIG, ksPassword);
                     LOGGER.debug("User CA cert: {}", userCaCert);
                     LOGGER.debug("User CA key: {}", userCaKey);
-                    File ksFile = createKeystore(Base64.getDecoder().decode(clientsCaCert),
-                        Base64.getDecoder().decode(userCaCert),
-                        Base64.getDecoder().decode(userCaKey),
+                    File ksFile = createKeystore(Util.decodeBytesFromBase64(clientsCaCert),
+                        Util.decodeBytesFromBase64(userCaCert),
+                        Util.decodeBytesFromBase64(userCaKey),
                         ksPassword);
                     properties.setProperty(SslConfigs.SSL_KEYSTORE_LOCATION_CONFIG, ksFile.getAbsolutePath());
                     properties.setProperty(SslConfigs.SSL_KEYSTORE_TYPE_CONFIG, TRUSTSTORE_TYPE_CONFIG);
@@ -275,7 +275,7 @@ abstract public class AbstractKafkaClientProperties<C extends AbstractKafkaClien
         keystore.delete(); // Note horrible race condition, but this is only for testing
         // RANDFILE=/tmp/.rnd openssl pkcs12 -export -in $3 -inkey $4 -name $HOSTNAME -password pass:$2 -out $1
         // The following code is needed to avoid race-condition which we see from time to time
-        TestUtils.waitFor("client-keystore readiness", Constants.GLOBAL_POLL_INTERVAL, Constants.CO_OPERATION_TIMEOUT_MEDIUM,
+        TestUtils.waitFor("client-keystore readiness", TestConstants.GLOBAL_POLL_INTERVAL, TestConstants.CO_OPERATION_TIMEOUT_MEDIUM,
             () -> Exec.exec("openssl",
                 "pkcs12",
                 "-export",
@@ -294,7 +294,7 @@ abstract public class AbstractKafkaClientProperties<C extends AbstractKafkaClien
     private static void importKeycloakCertificateToTruststore(Properties clientProperties) throws IOException {
 
         String responseKeycloak = Exec.exec("openssl", "s_client", "-showcerts", "-connect",
-            ResourceManager.kubeClient().getNodeAddress() + ":" + Constants.HTTPS_KEYCLOAK_DEFAULT_NODE_PORT).out();
+            ResourceManager.kubeClient().getNodeAddress() + ":" + TestConstants.HTTPS_KEYCLOAK_DEFAULT_NODE_PORT).out();
         Matcher matcher = Pattern.compile("-----(?s)(.*)-----").matcher(responseKeycloak);
 
         if (matcher.find()) {

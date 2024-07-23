@@ -6,14 +6,15 @@ package io.strimzi.api.kafka.model.nodepool;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
-import io.strimzi.api.kafka.model.Constants;
-import io.strimzi.api.kafka.model.Spec;
-import io.strimzi.api.kafka.model.template.ContainerTemplate;
-import io.strimzi.api.kafka.model.template.PodTemplate;
-import io.strimzi.api.kafka.model.template.ResourceTemplate;
+import io.strimzi.api.kafka.model.common.Constants;
+import io.strimzi.api.kafka.model.common.Spec;
+import io.strimzi.api.kafka.model.common.template.ContainerTemplate;
+import io.strimzi.api.kafka.model.common.template.PodTemplate;
+import io.strimzi.api.kafka.model.common.template.ResourceTemplate;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.sundr.builder.annotations.Buildable;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -29,9 +30,8 @@ import java.util.Map;
 @JsonPropertyOrder({"podSet", "pod", "perPodService", "perPodRoute", "perPodIngress", "persistentVolumeClaim",
                     "kafkaContainer", "initContainer"})
 @EqualsAndHashCode(callSuper = true)
+@ToString(callSuper = true)
 public class KafkaNodePoolTemplate extends Spec {
-    private static final long serialVersionUID = 1L;
-
     private ResourceTemplate podSet;
     private PodTemplate pod;
     private ResourceTemplate perPodService;
@@ -40,7 +40,7 @@ public class KafkaNodePoolTemplate extends Spec {
     private ResourceTemplate persistentVolumeClaim;
     private ContainerTemplate kafkaContainer;
     private ContainerTemplate initContainer;
-    private final Map<String, Object> additionalProperties = new HashMap<>(0);
+    private Map<String, Object> additionalProperties;
 
     @Description("Template for Kafka `StrimziPodSet` resource.")
     @JsonInclude(JsonInclude.Include.NON_EMPTY)
@@ -124,11 +124,14 @@ public class KafkaNodePoolTemplate extends Spec {
 
     @Override
     public Map<String, Object> getAdditionalProperties() {
-        return this.additionalProperties;
+        return this.additionalProperties != null ? this.additionalProperties : Map.of();
     }
 
     @Override
     public void setAdditionalProperty(String name, Object value) {
+        if (this.additionalProperties == null) {
+            this.additionalProperties = new HashMap<>(2);
+        }
         this.additionalProperties.put(name, value);
     }
 }

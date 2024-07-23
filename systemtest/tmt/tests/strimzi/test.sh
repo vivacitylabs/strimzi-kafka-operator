@@ -4,16 +4,18 @@
 cd ../../../../
 
 #run tests
-if [[ ${IP_FAMILY} == "ipv4" ]]; then
+if [[ ${IP_FAMILY} == "ipv4" || ${IP_FAMILY} == "dual" ]]; then
     DOCKER_REGISTRY=$(hostname --ip-address | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | awk '$1 != "127.0.0.1" { print $1 }' | head -1)
-else
-    # for ipv6 and dual
-    DOCKER_REGISTRY= "::"
-    # $(ip -6 addr show eth0 | awk '/inet6/ {print $2}' | cut -d '/' -f 1)
+elif [[ ${IP_FAMILY} == "ipv6" ]]; then
+    DOCKER_REGISTRY="myregistry.local"
 fi
 
 export DOCKER_REGISTRY="$DOCKER_REGISTRY:5001"
-echo "Using container registry:$DOCKER_REGISTRY"
+echo "Using container registry '$DOCKER_REGISTRY'"
+
+# Name of the image used within KafkaConnect build
+export CONNECT_IMAGE_WITH_FILE_SINK_PLUGIN="${DOCKER_REGISTRY}/${DOCKER_ORG}/connect-file-sink:latest"
+echo "Using CONNECT_IMAGE_WITH_FILE_SINK_PLUGIN=$CONNECT_IMAGE_WITH_FILE_SINK_PLUGIN"
 
 mvn compile -pl config-model-generator -DskipTests -Dmaven.javadoc.skip=true --no-transfer-progress
 mvn verify -pl systemtest -P ${TEST_PROFILE} \
@@ -22,6 +24,6 @@ mvn verify -pl systemtest -P ${TEST_PROFILE} \
     -DexcludedGroups="${EXCLUDED_TEST_GROUPS}" \
     -Dmaven.javadoc.skip=true \
     -Dfailsafe.rerunFailingTestsCount="${RERUN_FAILED_TEST_COUNT}" \
-    -Djunit.jupiter.execution.parallel.enabled=true \
+    -Djunit.jupiter.execution.parallel.enabled="${PARALLELISM_ENABLED}" \
     -Djunit.jupiter.execution.parallel.config.fixed.parallelism="${PARALLEL_TEST_COUNT}" \
     --no-transfer-progress

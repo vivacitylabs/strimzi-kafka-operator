@@ -10,14 +10,14 @@ import io.fabric8.kubernetes.api.model.PersistentVolumeClaimConditionBuilder;
 import io.fabric8.kubernetes.api.model.Quantity;
 import io.fabric8.kubernetes.api.model.storage.StorageClass;
 import io.fabric8.kubernetes.api.model.storage.StorageClassBuilder;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.status.KafkaStatus;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaStatus;
 import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.cluster.operator.resource.ResourceOperatorSupplier;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.PvcOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.StorageClassOperator;
 import io.strimzi.operator.common.Annotations;
 import io.strimzi.operator.common.Reconciliation;
-import io.strimzi.operator.common.operator.resource.PvcOperator;
-import io.strimzi.operator.common.operator.resource.StorageClassOperator;
 import io.vertx.core.Future;
 import io.vertx.junit5.Checkpoint;
 import io.vertx.junit5.VertxExtension;
@@ -215,7 +215,7 @@ public class PvcReconcilerTest {
     // Tests volume reconciliation when the PVC has some weird value
     //         => we cannot handle it successfully, but we should fail the reconciliation
     @Test
-    public void testVolumesBoundExpandableStorageClassWithInvalidUnit(VertxTestContext context)  {
+    public void testVolumesBoundExpandableStorageClassWithInvalidSize(VertxTestContext context)  {
         List<PersistentVolumeClaim> pvcs = List.of(
                 createPvc("data-pod-0"),
                 createPvc("data-pod-1"),
@@ -235,7 +235,7 @@ public class PvcReconcilerTest {
                         PersistentVolumeClaim pvcWithStatus = new PersistentVolumeClaimBuilder(currentPvc)
                                 .editSpec()
                                     .withNewResources()
-                                        .withRequests(Map.of("storage", new Quantity("50000000000200inv", null)))
+                                        .withRequests(Map.of("storage", new Quantity("-50000000000200Gi", null)))
                                     .endResources()
                                 .endSpec()
                                 .withNewStatus()
@@ -268,7 +268,7 @@ public class PvcReconcilerTest {
                 .onComplete(res -> {
                     assertThat(res.succeeded(), is(false));
                     assertThat(res.cause(), is(instanceOf(IllegalArgumentException.class)));
-                    assertThat(res.cause().getMessage(), is("Invalid memory suffix: inv"));
+                    assertThat(res.cause().getMessage(), is("Invalid memory suffix: -50000000000200Gi"));
                     async.flag();
                 });
     }

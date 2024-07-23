@@ -1,17 +1,163 @@
 # CHANGELOG
 
+## 0.42.0
+
+* Add support for Kafka 3.7.1
+* The `UseKRaft` feature gate moves to GA stage and is permanently enabled without the possibility to disable it.
+  To use KRaft (ZooKeeper-less Apache Kafka), you still need to use the `strimzi.io/kraft: enabled` annotation on the `Kafka` custom resources or migrate from an existing ZooKeeper-based cluster.
+* Update the base image used by Strimzi containers from UBI8 to UBI9
+* Add support for filename patterns when configuring trusted certificates
+* Enhance `KafkaBridge` resource with consumer inactivity timeout and HTTP consumer/producer enablement.
+* Add support for feature gates to User and Topic Operators
+* Add support for setting `publishNotReadyAddresses` on services for listener types other than internal.
+* Update HTTP bridge to latest 0.29.0 release
+* Uncommented and enabled (by default) KRaft-related metrics in the `kafka-metrics.yaml` example file.
+* Added support for configuring the quotas plugin with type `strimzi` or `kafka` in the `Kafka` custom resource.
+  The Strimzi Quotas plugin version was updated to 0.3.1.
+
+### Changes, deprecations and removals
+
+* The `reconciliationIntervalSeconds` configuration for the Topic and User Operators is deprecated, and will be removed when upgrading schemas to v1.
+  Use `reconciliationIntervalMs` converting the value to milliseconds.
+* Usage of Strimzi Quotas plugin version 0.2.0 is not supported, the plugin was updated to 0.3.1 and changed significantly.
+  Additionally, from Strimzi 0.42.0 the plugin should be configured in `.spec.kafka.quotas` section - the configuration of the plugin inside `.spec.kafka.config` is ignored and should be removed.
+
+## 0.41.0
+
+* Add support for Apache Kafka 3.6.2
+* Provide metrics to monitor certificates expiration as well as modified `Strimzi Operators` dashboard to include certificate expiration per cluster.
+* Add support for JBOD storage in KRaft mode.
+  (Note: JBOD support in KRaft mode is considered early-access in Apache Kafka 3.7.x)
+* Added support for topic replication factor change to the Unidirectional Topic Operator when Cruise Control integration is enabled.
+* The `KafkaNodePools` feature gate moves to GA stage and is permanently enabled without the possibility to disable it.
+  To use the Kafka Node Pool resources, you still need to use the `strimzi.io/node-pools: enabled` annotation on the `Kafka` custom resources.
+* Added support for configuring the `externalIPs` field in node port type services.
+* The `UnidirectionalTopicOperator` feature gate moves to GA stage and is permanently enabled without the possibility to disable it.
+  If the topics whose names start with `strimzi-store-topic` and `strimzi-topic-operator` still exist, you can delete them.
+* Don't allow MirrorMaker2 mirrors with target set to something else than the connect cluster. 
+* Added support for custom SASL config in standalone Topic Operator deployment to support alternate access controllers (i.e. `AWS_MSK_IAM`)
+* Remove Angular dependent plugins from Grafana example dashboard. This makes our dashboard compatible with Grafana 7.4.5 and higher.
+* Continue reconciliation after failed manual rolling update using the `strimzi.io/manual-rolling-update` annotation (when the `ContinueReconciliationOnManualRollingUpdateFailure` feature gate is enabled).
+
+### Changes, deprecations and removals
+
+* The `tlsSidecar` configuration for the Entity Operator is now deprecated and will be ignored.
+* The `zookeeperSessionTimeoutSeconds` and `topicMetadataMaxAttempts` configurations for the Entity Topic Operator have been removed and will be ignored.
+
+## 0.40.0
+
+* Add support for Apache Kafka 3.7.0.
+  Remove support for Apache Kafka 3.5.0, 3.5.1, and 3.5.2.
+* The `UseKRaft` feature gate moves to beta stage and is enabled by default.
+  If needed, `UseKRaft` can be disabled in the feature gates configuration in the Cluster Operator.
+* Add support for ZooKeeper to KRaft migration by enabling the users to move from using ZooKeeper to store metadata to use KRaft.
+* Add support for moving from dedicated controller-only KRaft nodes to mixed KRaft nodes
+* Fix NullPointerException from missing listenerConfig when using custom auth
+* Added support for Kafka Exporter `offset.show-all` parameter
+* Prevent removal of the `broker` process role from KRaft mixed-nodes that have assigned partition-replicas
+* Improve broker scale-down prevention to continue in reconciliation when scale-down cannot be executed
+* Added support for Tiered Storage by enabling the configuration of custom storage plugins through the Kafka custom resource.
+* Update HTTP bridge to latest 0.28.0 release
+
+### Changes, deprecations and removals
+
+* **From Strimzi 0.40.0 on, we support only Kubernetes 1.23 and newer.**
+  Kubernetes 1.21 and 1.22 are not supported anymore.
+* [#9508](https://github.com/strimzi/strimzi-kafka-operator/pull/9508) fixes the Strimzi CRDs and their definitions of labels and annotations.
+  This change brings our CRDs in-sync with the Kubernetes APIs.
+  After this fix, the label and annotation definitions in our CRDs (for example in the `template` sections) cannot contain integer values anymore and have to always use string values.
+  If your custom resources use an integer value, for example:
+  ```
+  template:
+    apiService:
+      metadata:
+        annotations:
+          discovery.myapigateway.io/port: 8080
+  ```
+  You might get an error similar to this when applying the resource:
+  ```
+  * spec.template.apiService.metadata.annotations.discovery.myapigateway.io/port: Invalid value: "integer": spec.template.apiService.metadata.annotations.discovery.myapigateway.io/port in body must be of type string: "integer"
+  ```
+  To fix the issue, just use a string value instead of an integer:
+  ```
+  template:
+    apiService:
+      metadata:
+        annotations:
+          discovery.myapigateway.io/port: "8080"
+  ```
+* Support for the JmxTrans component is now completely removed.
+  If you are upgrading from Strimzi 0.34 or earlier and have JmxTrans enabled in `.spec.jmxTrans` of the `Kafka` custom resource, you should disable it before the upgrade or delete it manually after the upgrade is complete.
+* The `api` module was refactored and classes were moved to new packages.
+* Strimzi Drain Cleaner 1.1.0 (included in the Strimzi 0.40.0 installation files) changes the way it handles Kubernetes eviction requests.
+  It denies them instead of allowing them.
+  This new behavior does not require the `PodDisruptionBudget` to be set to `maxUnavailable: 0`.
+  We expect this to improve the compatibility with various tools used for scaling Kubernetes clusters such as [Karpenter](https://karpenter.sh/).
+  If you observe any problems with your toolchain or just want to stick with the previous behavior, you can use the `STRIMZI_DENY_EVICTION` environment variable and set it to `false` to switch back to the old (legacy) mode.
+
+## 0.39.0
+
+* Add support for Apache Kafka 3.5.2 and 3.6.1
+* The `StableConnectIdentities` feature gate moves to GA stage and is now permanently enabled without the possibility to disable it.
+  All Connect and Mirror Maker 2 operands will now use StrimziPodSets.
+* The `KafkaNodePools` feature gate moves to beta stage and is enabled by default.
+  If needed, `KafkaNodePools` can be disabled in the feature gates configuration in the Cluster Operator.
+* The `UnidirectionalTopicOperator` feature gate moves to beta stage and is enabled by default.
+  If needed, `UnidirectionalTopicOperator` can be disabled in the feature gates configuration in the Cluster Operator.
+* Improved Kafka Connect metrics and dashboard example files
+* Allow specifying and managing KRaft metadata version
+* Add support for KRaft to KRaft upgrades (Apache Kafka upgrades for the KRaft based clusters)
+* Improved Kafka Mirror Maker 2 dashboard example file
+
+### Changes, deprecations and removals
+
+* The `StableConnectIdentities` feature gate moves to GA stage and cannot be disabled anymore.
+  When using Connect or Mirror Maker 2 operands, direct downgrade to Strimzi versions older than 0.34 is not supported anymore.
+  You have to first downgrade to Strimzi version between 0.34 to 0.38, disable the `StableConnectIdentities` feature gate, and only then downgrade to an older Strimzi version.
+* Strimzi 0.39.0 (and any of its patch releases) is the last Strimzi version with support for Kubernetes 1.21 and 1.22.
+  From Strimzi 0.40.0 on, we will support only Kubernetes 1.23 and newer.
+
 ## 0.38.0
 
+* Add support for Apache Kafka 3.6.0 and drop support for 3.4.0 and 3.4.1
 * Sign containers using `cosign`
 * Generate and publish Software Bill of Materials (SBOMs) of Strimzi containers
 * Add support for stopping connectors according to [Strimzi Proposal #54](https://github.com/strimzi/proposals/blob/main/054-stopping-kafka-connect-connectors.md)
+* Allow manual rolling of Kafka Connect and Kafka Mirror Maker 2 pods using the `strimzi.io/manual-rolling-update` annotation (supported only when `StableConnectIdentities` feature gate is enabled) 
+* Make sure brokers are empty before scaling them down
+* Update Cruise Control to 2.5.128
+* Add support for pausing reconciliations to the Unidirectional Topic Operator
+* Allow running ZooKeeper and KRaft based Apache Kafka clusters in parallel when the `+UseKRaft` feature gate is enabled
+* Add support for metrics to the Unidirectional Topic Operator
+* Added the `includeAcceptHeader` option to OAuth client and listener authentication configuration and to `keycloak` authorization. If set to `false` it turns off sending of `Accept` header when communicating with OAuth / OIDC authorization server. This feature is enabled by the updated Strimzi Kafka OAuth library (0.14.0).
+* Update HTTP bridge to latest 0.27.0 release
 
 ### Changes, deprecations and removals
 
 * The `Kafka.KafkaStatus.ListenerStatus.type` property has been deprecated for a long time, and now we do not use it anymore.
   The current plan is to completely remove this property in the next schema version.
   If needed, you can use the `Kafka.KafkaStatus.ListenerStatus.name` property, which has the same value.
-
+* Added `strimzi.io/kraft` annotation to be applied on `Kafka` custom resource, together with the `+UseKRaft` feature gate enabled, to declare a ZooKeeper or KRaft based cluster.
+  * if `enabled` the `Kafka` resource defines a KRaft-based cluster.
+  * if `disabled`, missing or any other value, the operator handle the `Kafka` resource as a ZooKeeper-based cluster.
+* The `io.strimzi.kafka.EnvVarConfigProvider` configuration provider is now deprecated and will be removed in Strimzi 0.42. Users should migrate to Kafka's implementation, `org.apache.kafka.common.config.provider.EnvVarConfigProvider`, which is a drop-in replacement.
+  For example:
+  ```yaml
+  config:
+    # ...
+    config.providers: env
+    config.providers.env.class: io.strimzi.kafka.EnvVarConfigProvider
+    # ...
+  ```
+  becomes
+  ```yaml
+  config:
+    # ...
+    config.providers: env
+    config.providers.env.class: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+    # ...
+  ```
+  
 ## 0.37.0
 
 * The `StableConnectIdentites` feature gate moves to beta stage.

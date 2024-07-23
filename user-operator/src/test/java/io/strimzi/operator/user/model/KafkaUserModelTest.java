@@ -8,17 +8,18 @@ import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.OwnerReference;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.SecretBuilder;
-import io.strimzi.api.kafka.model.KafkaUser;
-import io.strimzi.api.kafka.model.KafkaUserBuilder;
-import io.strimzi.api.kafka.model.KafkaUserQuotas;
-import io.strimzi.api.kafka.model.KafkaUserSpec;
-import io.strimzi.api.kafka.model.KafkaUserTlsClientAuthentication;
-import io.strimzi.api.kafka.model.KafkaUserTlsExternalClientAuthentication;
+import io.strimzi.api.kafka.model.user.KafkaUser;
+import io.strimzi.api.kafka.model.user.KafkaUserBuilder;
+import io.strimzi.api.kafka.model.user.KafkaUserQuotas;
+import io.strimzi.api.kafka.model.user.KafkaUserSpec;
+import io.strimzi.api.kafka.model.user.KafkaUserTlsClientAuthentication;
+import io.strimzi.api.kafka.model.user.KafkaUserTlsExternalClientAuthentication;
 import io.strimzi.certs.CertManager;
-import io.strimzi.operator.common.model.InvalidResourceException;
-import io.strimzi.operator.common.model.PasswordGenerator;
 import io.strimzi.operator.common.Reconciliation;
+import io.strimzi.operator.common.Util;
+import io.strimzi.operator.common.model.InvalidResourceException;
 import io.strimzi.operator.common.model.Labels;
+import io.strimzi.operator.common.model.PasswordGenerator;
 import io.strimzi.operator.common.operator.MockCertManager;
 import io.strimzi.operator.user.ResourceUtils;
 import io.strimzi.operator.user.UserOperatorConfig;
@@ -46,11 +47,11 @@ public class KafkaUserModelTest {
     private final static String DESIRED_PASSWORD = "123456";
     private final static String DESIRED_BASE64_PASSWORD = Base64.getEncoder().encodeToString(DESIRED_PASSWORD.getBytes(StandardCharsets.UTF_8));
 
-    private final KafkaUser tlsUser = ResourceUtils.createKafkaUserTls();
-    private final KafkaUser scramShaUser = ResourceUtils.createKafkaUserScramSha();
-    private final KafkaUser quotasUser = ResourceUtils.createKafkaUserQuotas(1000, 2000, 42, 10d);
-    private final Secret clientsCaCert = ResourceUtils.createClientsCaCertSecret();
-    private final Secret clientsCaKey = ResourceUtils.createClientsCaKeySecret();
+    private final KafkaUser tlsUser = ResourceUtils.createKafkaUserTls(ResourceUtils.NAMESPACE);
+    private final KafkaUser scramShaUser = ResourceUtils.createKafkaUserScramSha(ResourceUtils.NAMESPACE);
+    private final KafkaUser quotasUser = ResourceUtils.createKafkaUserQuotas(ResourceUtils.NAMESPACE, 1000, 2000, 42, 10d);
+    private final Secret clientsCaCert = ResourceUtils.createClientsCaCertSecret(ResourceUtils.NAMESPACE);
+    private final Secret clientsCaKey = ResourceUtils.createClientsCaKeySecret(ResourceUtils.NAMESPACE);
     private final CertManager mockCertManager = new MockCertManager();
     private final PasswordGenerator passwordGenerator = new PasswordGenerator(10, "a", "a");
 
@@ -79,7 +80,7 @@ public class KafkaUserModelTest {
 
     @Test
     public void testFromCrdTlsExternalUser()   {
-        KafkaUserModel model = KafkaUserModel.fromCrd(ResourceUtils.createKafkaUser(new KafkaUserTlsExternalClientAuthentication()), UserOperatorConfig.SECRET_PREFIX.defaultValue(), Boolean.parseBoolean(UserOperatorConfig.ACLS_ADMIN_API_SUPPORTED.defaultValue()));
+        KafkaUserModel model = KafkaUserModel.fromCrd(ResourceUtils.createKafkaUser(ResourceUtils.NAMESPACE, new KafkaUserTlsExternalClientAuthentication()), UserOperatorConfig.SECRET_PREFIX.defaultValue(), Boolean.parseBoolean(UserOperatorConfig.ACLS_ADMIN_API_SUPPORTED.defaultValue()));
 
         assertThat(model.namespace, is(ResourceUtils.NAMESPACE));
         assertThat(model.name, is(ResourceUtils.NAME));
@@ -116,7 +117,7 @@ public class KafkaUserModelTest {
 
     @Test
     public void testFromCrdQuotaUserWithNullValues()   {
-        KafkaUser quotasUserWithNulls = ResourceUtils.createKafkaUserQuotas(null, 2000, null, 10d);
+        KafkaUser quotasUserWithNulls = ResourceUtils.createKafkaUserQuotas(ResourceUtils.NAMESPACE, null, 2000, null, 10d);
         KafkaUserModel model = KafkaUserModel.fromCrd(quotasUserWithNulls, UserOperatorConfig.SECRET_PREFIX.defaultValue(), Boolean.parseBoolean(UserOperatorConfig.ACLS_ADMIN_API_SUPPORTED.defaultValue()));
 
         assertThat(model.namespace, is(ResourceUtils.NAMESPACE));
@@ -225,11 +226,11 @@ public class KafkaUserModelTest {
         model.maybeGenerateCertificates(Reconciliation.DUMMY_RECONCILIATION, mockCertManager, passwordGenerator, clientsCaCert, clientsCaKey, null, 365, 30, null, Clock.systemUTC());
         Secret generated = model.generateSecret();
 
-        assertThat(new String(model.decodeFromSecret(generated, "ca.crt")), is("clients-ca-crt"));
-        assertThat(new String(model.decodeFromSecret(generated, "user.crt")), is(MockCertManager.userCert()));
-        assertThat(new String(model.decodeFromSecret(generated, "user.key")), is(MockCertManager.userKey()));
-        assertThat(new String(model.decodeFromSecret(generated, "user.p12")), is(MockCertManager.userKeyStore()));
-        assertThat(new String(model.decodeFromSecret(generated, "user.password")), is("aaaaaaaaaa"));
+        assertThat(Util.decodeFromBase64(generated.getData().get("ca.crt")), is("clients-ca-crt"));
+        assertThat(Util.decodeFromBase64(generated.getData().get("user.crt")), is(MockCertManager.userCert()));
+        assertThat(Util.decodeFromBase64(generated.getData().get("user.key")), is(MockCertManager.userKey()));
+        assertThat(Util.decodeFromBase64(generated.getData().get("user.p12")), is(MockCertManager.userKeyStore()));
+        assertThat(Util.decodeFromBase64(generated.getData().get("user.password")), is("aaaaaaaaaa"));
 
         // Check owner reference
         checkOwnerReference(model.createOwnerReference(), generated);
@@ -269,22 +270,22 @@ public class KafkaUserModelTest {
 
     @Test
     public void testGenerateSecretGeneratesCertificateAtCaChange() {
-        Secret userCert = ResourceUtils.createUserSecretTls();
-        Secret clientsCaCertSecret = ResourceUtils.createClientsCaCertSecret();
+        Secret userCert = ResourceUtils.createUserSecretTls(ResourceUtils.NAMESPACE);
+        Secret clientsCaCertSecret = ResourceUtils.createClientsCaCertSecret(ResourceUtils.NAMESPACE);
         clientsCaCertSecret.getData().put("ca.crt", Base64.getEncoder().encodeToString("different-clients-ca-crt".getBytes()));
 
-        Secret clientsCaKeySecret = ResourceUtils.createClientsCaKeySecret();
+        Secret clientsCaKeySecret = ResourceUtils.createClientsCaKeySecret(ResourceUtils.NAMESPACE);
         clientsCaKeySecret.getData().put("ca.key", Base64.getEncoder().encodeToString("different-clients-ca-key".getBytes()));
 
         KafkaUserModel model = KafkaUserModel.fromCrd(tlsUser, UserOperatorConfig.SECRET_PREFIX.defaultValue(), Boolean.parseBoolean(UserOperatorConfig.ACLS_ADMIN_API_SUPPORTED.defaultValue()));
         model.maybeGenerateCertificates(Reconciliation.DUMMY_RECONCILIATION, mockCertManager, passwordGenerator, clientsCaCertSecret, clientsCaKeySecret, userCert, 365, 30, null, Clock.systemUTC());
         Secret generatedSecret = model.generateSecret();
-
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "ca.crt")),  is("different-clients-ca-crt"));
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "user.crt")), is(MockCertManager.userCert()));
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "user.key")), is(MockCertManager.userKey()));
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "user.p12")), is(MockCertManager.userKeyStore()));
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "user.password")), is("aaaaaaaaaa"));
+    
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("ca.crt")),  is("different-clients-ca-crt"));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("user.crt")), is(MockCertManager.userCert()));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("user.key")), is(MockCertManager.userKey()));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("user.p12")), is(MockCertManager.userKeyStore()));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("user.password")), is("aaaaaaaaaa"));
 
         // Check owner reference
         checkOwnerReference(model.createOwnerReference(), generatedSecret);
@@ -292,18 +293,18 @@ public class KafkaUserModelTest {
 
     @Test
     public void testGenerateSecretGeneratedCertificateDoesNotChangeFromUserProvided()    {
-        Secret userCert = ResourceUtils.createUserSecretTls();
+        Secret userCert = ResourceUtils.createUserSecretTls(ResourceUtils.NAMESPACE);
 
         KafkaUserModel model = KafkaUserModel.fromCrd(tlsUser, UserOperatorConfig.SECRET_PREFIX.defaultValue(), Boolean.parseBoolean(UserOperatorConfig.ACLS_ADMIN_API_SUPPORTED.defaultValue()));
         model.maybeGenerateCertificates(Reconciliation.DUMMY_RECONCILIATION, mockCertManager, passwordGenerator, clientsCaCert, clientsCaKey, userCert, 365, 30, null, Clock.systemUTC());
         Secret generatedSecret = model.generateSecret();
 
         // These values match those in ResourceUtils.createUserSecretTls()
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "ca.crt")),  is("clients-ca-crt"));
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "user.crt")), is("expected-crt"));
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "user.key")), is("expected-key"));
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "user.p12")), is("expected-p12"));
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "user.password")), is("expected-password"));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("ca.crt")),  is("clients-ca-crt"));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("user.crt")), is("expected-crt"));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("user.key")), is("expected-key"));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("user.p12")), is("expected-p12"));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("user.password")), is("expected-password"));
 
         // Check owner reference
         checkOwnerReference(model.createOwnerReference(), generatedSecret);
@@ -311,16 +312,16 @@ public class KafkaUserModelTest {
 
     @Test
     public void testGenerateSecretGeneratesCertificateWithExistingScramSha()    {
-        Secret userCert = ResourceUtils.createUserSecretScramSha();
+        Secret userCert = ResourceUtils.createUserSecretScramSha(ResourceUtils.NAMESPACE);
         KafkaUserModel model = KafkaUserModel.fromCrd(tlsUser, UserOperatorConfig.SECRET_PREFIX.defaultValue(), Boolean.parseBoolean(UserOperatorConfig.ACLS_ADMIN_API_SUPPORTED.defaultValue()));
         model.maybeGenerateCertificates(Reconciliation.DUMMY_RECONCILIATION, mockCertManager, passwordGenerator, clientsCaCert, clientsCaKey, userCert, 365, 30, null, Clock.systemUTC());
         Secret generated = model.generateSecret();
 
-        assertThat(new String(model.decodeFromSecret(generated, "ca.crt")),  is("clients-ca-crt"));
-        assertThat(new String(model.decodeFromSecret(generated, "user.crt")), is(MockCertManager.userCert()));
-        assertThat(new String(model.decodeFromSecret(generated, "user.key")), is(MockCertManager.userKey()));
-        assertThat(new String(model.decodeFromSecret(generated, "user.p12")), is(MockCertManager.userKeyStore()));
-        assertThat(new String(model.decodeFromSecret(generated, "user.password")), is("aaaaaaaaaa"));
+        assertThat(Util.decodeFromBase64(generated.getData().get("ca.crt")),  is("clients-ca-crt"));
+        assertThat(Util.decodeFromBase64(generated.getData().get("user.crt")), is(MockCertManager.userCert()));
+        assertThat(Util.decodeFromBase64(generated.getData().get("user.key")), is(MockCertManager.userKey()));
+        assertThat(Util.decodeFromBase64(generated.getData().get("user.p12")), is(MockCertManager.userKeyStore()));
+        assertThat(Util.decodeFromBase64(generated.getData().get("user.password")), is("aaaaaaaaaa"));
 
         // Check owner reference
         checkOwnerReference(model.createOwnerReference(), generated);
@@ -342,12 +343,12 @@ public class KafkaUserModelTest {
 
         assertThat(generatedSecret.getData().keySet(), is(set("ca.crt", "user.crt", "user.key", "user.p12", "user.password")));
 
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "ca.crt")), is("clients-ca-crt"));
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "user.crt")), is(MockCertManager.userCert()));
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "user.key")), is(MockCertManager.userKey()));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("ca.crt")), is("clients-ca-crt"));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("user.crt")), is(MockCertManager.userCert()));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("user.key")), is(MockCertManager.userKey()));
         // assert that keystore and password have been re-added
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "user.p12")), is(MockCertManager.userKeyStore()));
-        assertThat(new String(model.decodeFromSecret(generatedSecret, "user.password")), is("aaaaaaaaaa"));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("user.p12")), is(MockCertManager.userKeyStore()));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get("user.password")), is("aaaaaaaaaa"));
 
         // Check owner reference
         checkOwnerReference(model.createOwnerReference(), generatedSecret);
@@ -373,8 +374,8 @@ public class KafkaUserModelTest {
         assertThat(generatedSecret.getData().keySet(), is(new HashSet<>(Arrays.asList(KafkaUserModel.KEY_PASSWORD, KafkaUserModel.KEY_SASL_JAAS_CONFIG))));
 
         String password = "aaaaaaaaaa";
-        assertThat(new String(Base64.getDecoder().decode(generatedSecret.getData().get(KafkaUserModel.KEY_PASSWORD))), is(password));
-        assertThat(new String(Base64.getDecoder().decode(generatedSecret.getData().get(KafkaUserModel.KEY_SASL_JAAS_CONFIG))),
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get(KafkaUserModel.KEY_PASSWORD)), is(password));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get(KafkaUserModel.KEY_SASL_JAAS_CONFIG)),
                 is("org.apache.kafka.common.security.scram.ScramLoginModule required username=\"" + ResourceUtils.NAME + "\" password=\"" + password + "\";"));
 
         // Check owner reference
@@ -383,7 +384,7 @@ public class KafkaUserModelTest {
 
     @Test
     public void testGenerateSecretGeneratesPasswordKeepingExistingScramShaPassword()    {
-        Secret scramShaSecret = ResourceUtils.createUserSecretScramSha();
+        Secret scramShaSecret = ResourceUtils.createUserSecretScramSha(ResourceUtils.NAMESPACE);
         KafkaUserModel model = KafkaUserModel.fromCrd(scramShaUser, UserOperatorConfig.SECRET_PREFIX.defaultValue(), Boolean.parseBoolean(UserOperatorConfig.ACLS_ADMIN_API_SUPPORTED.defaultValue()));
         model.maybeGeneratePassword(Reconciliation.DUMMY_RECONCILIATION, passwordGenerator, scramShaSecret, null);
         Secret generated = model.generateSecret();
@@ -445,8 +446,8 @@ public class KafkaUserModelTest {
 
         assertThat(generatedSecret.getData().keySet(), is(new HashSet<>(Arrays.asList(KafkaUserModel.KEY_PASSWORD, KafkaUserModel.KEY_SASL_JAAS_CONFIG))));
 
-        assertThat(new String(Base64.getDecoder().decode(generatedSecret.getData().get(KafkaUserModel.KEY_PASSWORD))), is(DESIRED_PASSWORD));
-        assertThat(new String(Base64.getDecoder().decode(generatedSecret.getData().get(KafkaUserModel.KEY_SASL_JAAS_CONFIG))),
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get(KafkaUserModel.KEY_PASSWORD)), is(DESIRED_PASSWORD));
+        assertThat(Util.decodeFromBase64(generatedSecret.getData().get(KafkaUserModel.KEY_SASL_JAAS_CONFIG)),
                 is("org.apache.kafka.common.security.scram.ScramLoginModule required username=\"" + ResourceUtils.NAME + "\" password=\"" + DESIRED_PASSWORD + "\";"));
 
         // Check owner reference
@@ -455,7 +456,7 @@ public class KafkaUserModelTest {
 
     @Test
     public void testGenerateSecretUpdatesPasswordWhenRequestedByTheUser()    {
-        Secret scramShaSecret = ResourceUtils.createUserSecretScramSha();
+        Secret scramShaSecret = ResourceUtils.createUserSecretScramSha(ResourceUtils.NAMESPACE);
 
         KafkaUser user = new KafkaUserBuilder(scramShaUser)
             .editSpec()
@@ -492,8 +493,8 @@ public class KafkaUserModelTest {
                         .withStrimziKind(KafkaUser.RESOURCE_KIND)
                         .toMap()));
         assertThat(generated.getData().keySet(), is(new HashSet<>(Arrays.asList(KafkaUserModel.KEY_PASSWORD, KafkaUserModel.KEY_SASL_JAAS_CONFIG))));
-        assertThat(new String(Base64.getDecoder().decode(generated.getData().get(KafkaUserModel.KEY_PASSWORD))), is(DESIRED_PASSWORD));
-        assertThat(new String(Base64.getDecoder().decode(generated.getData().get(KafkaUserModel.KEY_SASL_JAAS_CONFIG))),
+        assertThat(Util.decodeFromBase64(generated.getData().get(KafkaUserModel.KEY_PASSWORD)), is(DESIRED_PASSWORD));
+        assertThat(Util.decodeFromBase64(generated.getData().get(KafkaUserModel.KEY_SASL_JAAS_CONFIG)),
                 is("org.apache.kafka.common.security.scram.ScramLoginModule required username=\"" + ResourceUtils.NAME + "\" password=\"" + DESIRED_PASSWORD + "\";"));
 
         // Check owner reference
@@ -584,7 +585,7 @@ public class KafkaUserModelTest {
 
     @Test
     public void testGenerateSecretGeneratesPasswordFromExistingTlsSecret()    {
-        Secret userCert = ResourceUtils.createUserSecretTls();
+        Secret userCert = ResourceUtils.createUserSecretTls(ResourceUtils.NAMESPACE);
         KafkaUserModel model = KafkaUserModel.fromCrd(scramShaUser, UserOperatorConfig.SECRET_PREFIX.defaultValue(), Boolean.parseBoolean(UserOperatorConfig.ACLS_ADMIN_API_SUPPORTED.defaultValue()));
         model.maybeGeneratePassword(Reconciliation.DUMMY_RECONCILIATION, passwordGenerator, userCert, null);
         Secret generated = model.generateSecret();
@@ -604,8 +605,8 @@ public class KafkaUserModelTest {
         assertThat(generated.getData().keySet(), is(new HashSet<>(Arrays.asList(KafkaUserModel.KEY_PASSWORD, KafkaUserModel.KEY_SASL_JAAS_CONFIG))));
 
         String password = "aaaaaaaaaa";
-        assertThat(new String(Base64.getDecoder().decode(generated.getData().get(KafkaUserModel.KEY_PASSWORD))), is(password));
-        assertThat(new String(Base64.getDecoder().decode(generated.getData().get(KafkaUserModel.KEY_SASL_JAAS_CONFIG))),
+        assertThat(Util.decodeFromBase64(generated.getData().get(KafkaUserModel.KEY_PASSWORD)), is(password));
+        assertThat(Util.decodeFromBase64(generated.getData().get(KafkaUserModel.KEY_SASL_JAAS_CONFIG)),
                 is("org.apache.kafka.common.security.scram.ScramLoginModule required username=\"" + ResourceUtils.NAME + "\" password=\"" + password + "\";"));
 
         // Check owner reference
@@ -614,7 +615,7 @@ public class KafkaUserModelTest {
 
     @Test
     public void testGenerateSecretWithNoTlsAuthenticationKafkaUserReturnsNull()    {
-        KafkaUser user = ResourceUtils.createKafkaUserTls();
+        KafkaUser user = ResourceUtils.createKafkaUserTls(ResourceUtils.NAMESPACE);
         user.setSpec(new KafkaUserSpec());
 
         KafkaUserModel model = KafkaUserModel.fromCrd(user, UserOperatorConfig.SECRET_PREFIX.defaultValue(), Boolean.parseBoolean(UserOperatorConfig.ACLS_ADMIN_API_SUPPORTED.defaultValue()));
@@ -624,7 +625,7 @@ public class KafkaUserModelTest {
 
     @Test
     public void testGetSimpleAclRulesWithNoSimpleAuthorizationReturnsNull()    {
-        KafkaUser user = ResourceUtils.createKafkaUserTls();
+        KafkaUser user = ResourceUtils.createKafkaUserTls(ResourceUtils.NAMESPACE);
         user.setSpec(new KafkaUserSpec());
 
         KafkaUserModel model = KafkaUserModel.fromCrd(user, UserOperatorConfig.SECRET_PREFIX.defaultValue(), Boolean.parseBoolean(UserOperatorConfig.ACLS_ADMIN_API_SUPPORTED.defaultValue()));

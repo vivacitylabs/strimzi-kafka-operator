@@ -22,21 +22,21 @@ import io.fabric8.kubernetes.api.model.TopologySpreadConstraint;
 import io.fabric8.kubernetes.api.model.TopologySpreadConstraintBuilder;
 import io.fabric8.kubernetes.api.model.Volume;
 import io.fabric8.kubernetes.api.model.VolumeMount;
-import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicy;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
-import io.strimzi.api.kafka.model.ContainerEnvVar;
-import io.strimzi.api.kafka.model.InlineLogging;
-import io.strimzi.api.kafka.model.JmxPrometheusExporterMetrics;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBuilder;
-import io.strimzi.api.kafka.model.KafkaExporterResources;
-import io.strimzi.api.kafka.model.KafkaExporterSpec;
-import io.strimzi.api.kafka.model.KafkaExporterSpecBuilder;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.storage.EphemeralStorage;
-import io.strimzi.api.kafka.model.storage.SingleVolumeStorage;
-import io.strimzi.api.kafka.model.storage.Storage;
-import io.strimzi.api.kafka.model.template.DeploymentStrategy;
+import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicy;
+import io.strimzi.api.kafka.model.common.ContainerEnvVar;
+import io.strimzi.api.kafka.model.common.InlineLogging;
+import io.strimzi.api.kafka.model.common.metrics.JmxPrometheusExporterMetrics;
+import io.strimzi.api.kafka.model.common.template.DeploymentStrategy;
+import io.strimzi.api.kafka.model.kafka.EphemeralStorage;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.SingleVolumeStorage;
+import io.strimzi.api.kafka.model.kafka.Storage;
+import io.strimzi.api.kafka.model.kafka.exporter.KafkaExporterResources;
+import io.strimzi.api.kafka.model.kafka.exporter.KafkaExporterSpec;
+import io.strimzi.api.kafka.model.kafka.exporter.KafkaExporterSpecBuilder;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
 import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.cluster.model.metrics.MetricsModel;
@@ -93,6 +93,7 @@ public class KafkaExporterTest {
     private final String topicRegex = "my-topic-.*";
     private final String groupExcludeRegex = "my-group-exclude-.*";
     private final String topicExcludeRegex = "my-topic-exclude-.*";
+    private final boolean showAllOffsets = false;
 
     private final KafkaExporterSpec exporterOperator = new KafkaExporterSpecBuilder()
             .withLogging(exporterOperatorLogging)
@@ -102,6 +103,7 @@ public class KafkaExporterTest {
             .withTopicExcludeRegex(topicExcludeRegex)
             .withImage(keImage)
             .withEnableSaramaLogging(true)
+            .withShowAllOffsets(showAllOffsets)
             .withNewTemplate()
                 .withNewPod()
                     .withTmpDirSizeLimit("100Mi")
@@ -135,6 +137,7 @@ public class KafkaExporterTest {
         expected.add(new EnvVarBuilder().withName(KafkaExporter.ENV_VAR_KAFKA_EXPORTER_TOPIC_EXCLUDE_REGEX).withValue(topicExcludeRegex).build());
         expected.add(new EnvVarBuilder().withName(KafkaExporter.ENV_VAR_KAFKA_EXPORTER_KAFKA_SERVER).withValue("foo-kafka-bootstrap:" + KafkaCluster.REPLICATION_PORT).build());
         expected.add(new EnvVarBuilder().withName(KafkaExporter.ENV_VAR_KAFKA_EXPORTER_ENABLE_SARAMA).withValue("true").build());
+        expected.add(new EnvVarBuilder().withName(KafkaExporter.ENV_VAR_KAFKA_EXPORTER_OFFSET_SHOW_ALL).withValue(String.valueOf(showAllOffsets)).build());
         return expected;
     }
 
@@ -152,6 +155,7 @@ public class KafkaExporterTest {
         assertNull(ke.groupExcludeRegex);
         assertNull(ke.topicExcludeRegex);
         assertThat(ke.saramaLoggingEnabled, is(false));
+        assertThat(ke.showAllOffsets, is(true));
     }
 
     @ParallelTest
@@ -165,17 +169,18 @@ public class KafkaExporterTest {
         assertThat(ke.groupExcludeRegex, is("my-group-exclude-.*"));
         assertThat(ke.topicExcludeRegex, is("my-topic-exclude-.*"));
         assertThat(ke.saramaLoggingEnabled, is(true));
+        assertThat(ke.showAllOffsets, is(false));
     }
 
     @ParallelTest
     public void testGenerateDeployment() {
-        Deployment dep = ke.generateDeployment(true, null, null);
+        Deployment dep = ke.generateDeployment(Map.of(), true, null, null);
 
         List<Container> containers = dep.getSpec().getTemplate().getSpec().getContainers();
 
         assertThat(containers.size(), is(1));
 
-        assertThat(dep.getMetadata().getName(), is(KafkaExporterResources.deploymentName(cluster)));
+        assertThat(dep.getMetadata().getName(), is(KafkaExporterResources.componentName(cluster)));
         assertThat(dep.getMetadata().getNamespace(), is(namespace));
         TestUtils.checkOwnerReference(dep, resource);
 
@@ -242,10 +247,10 @@ public class KafkaExporterTest {
 
     @ParallelTest
     public void testImagePullPolicy() {
-        Deployment dep = ke.generateDeployment(true, ImagePullPolicy.ALWAYS, null);
+        Deployment dep = ke.generateDeployment(Map.of(), true, ImagePullPolicy.ALWAYS, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getImagePullPolicy(), is(ImagePullPolicy.ALWAYS.toString()));
 
-        dep = ke.generateDeployment(true, ImagePullPolicy.IFNOTPRESENT, null);
+        dep = ke.generateDeployment(Map.of(), true, ImagePullPolicy.IFNOTPRESENT, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getImagePullPolicy(), is(ImagePullPolicy.IFNOTPRESENT.toString()));
     }
 
@@ -421,7 +426,7 @@ public class KafkaExporterTest {
             new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
 
         // Check Deployment
-        Deployment dep = ke.generateDeployment(true, null, null);
+        Deployment dep = ke.generateDeployment(Map.of(), true, null, null);
         assertThat(dep.getMetadata().getLabels().entrySet().containsAll(expectedDepLabels.entrySet()), is(true));
         assertThat(dep.getMetadata().getAnnotations().entrySet().containsAll(depAnots.entrySet()), is(true));
 
@@ -457,7 +462,7 @@ public class KafkaExporterTest {
                 .build();
         KafkaExporter ke = KafkaExporter.fromCrd(new Reconciliation("test", resource.getKind(), 
                 resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
-        Deployment dep = ke.generateDeployment(true, null, null);
+        Deployment dep = ke.generateDeployment(Map.of(), true, null, null);
         assertThat(dep.getSpec().getStrategy().getType(), is("Recreate"));
     }
 

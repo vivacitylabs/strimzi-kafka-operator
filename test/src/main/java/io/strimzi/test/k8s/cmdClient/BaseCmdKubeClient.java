@@ -11,9 +11,9 @@ import io.strimzi.test.TestUtils;
 import io.strimzi.test.executor.Exec;
 import io.strimzi.test.executor.ExecResult;
 import io.strimzi.test.k8s.exceptions.KubeClusterException;
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.Level;
 
 import java.io.File;
 import java.io.IOException;
@@ -290,10 +290,20 @@ public abstract class BaseCmdKubeClient<K extends BaseCmdKubeClient<K>> implemen
     }
 
     @Override
-    public ExecResult execInPod(Level logLeve, String pod, String... command) {
+    public ExecResult execInPod(String pod, boolean throwErrors, String... command) {
+        return execInPod(Level.INFO, pod, throwErrors, command);
+    }
+
+    @Override
+    public ExecResult execInPod(Level logLevel, String pod, String... command) {
+        return execInPod(Level.INFO, pod, true, command);
+    }
+
+    @Override
+    public ExecResult execInPod(Level logLevel, String pod, boolean throwErrors, String... command) {
         List<String> cmd = namespacedCommand("exec", pod, "--");
         cmd.addAll(asList(command));
-        return Exec.exec(null, cmd, 0, logLeve);
+        return Exec.exec(null, cmd, 0, logLevel, throwErrors);
     }
 
     @Override
@@ -302,10 +312,20 @@ public abstract class BaseCmdKubeClient<K extends BaseCmdKubeClient<K>> implemen
     }
 
     @Override
+    public ExecResult execInPodContainer(boolean throwErrors, String pod, String container, String... command) {
+        return execInPodContainer(throwErrors, Level.INFO, pod, container, command);
+    }
+
+    @Override
     public ExecResult execInPodContainer(Level logLevel, String pod, String container, String... command) {
+        return execInPodContainer(true, logLevel, pod, container, command);
+    }
+
+    @Override
+    public ExecResult execInPodContainer(boolean throwErrors, Level logLevel, String pod, String container, String... command) {
         List<String> cmd = namespacedCommand("exec", pod, "-c", container, "--");
         cmd.addAll(asList(command));
-        return Exec.exec(null, cmd, 0, logLevel);
+        return Exec.exec(null, cmd, 0, logLevel, throwErrors);
     }
 
     @Override

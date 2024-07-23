@@ -6,51 +6,53 @@ package io.strimzi.operator.cluster.operator.resource;
 
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.openshift.client.OpenShiftClient;
-import io.strimzi.api.kafka.KafkaBridgeList;
-import io.strimzi.api.kafka.KafkaConnectList;
-import io.strimzi.api.kafka.KafkaConnectorList;
-import io.strimzi.api.kafka.KafkaList;
-import io.strimzi.api.kafka.KafkaMirrorMaker2List;
-import io.strimzi.api.kafka.KafkaMirrorMakerList;
-import io.strimzi.api.kafka.KafkaNodePoolList;
-import io.strimzi.api.kafka.KafkaRebalanceList;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBridge;
-import io.strimzi.api.kafka.model.KafkaConnect;
-import io.strimzi.api.kafka.model.KafkaConnector;
-import io.strimzi.api.kafka.model.KafkaMirrorMaker;
-import io.strimzi.api.kafka.model.KafkaMirrorMaker2;
-import io.strimzi.api.kafka.model.KafkaRebalance;
+import io.strimzi.api.kafka.model.bridge.KafkaBridge;
+import io.strimzi.api.kafka.model.bridge.KafkaBridgeList;
+import io.strimzi.api.kafka.model.connect.KafkaConnect;
+import io.strimzi.api.kafka.model.connect.KafkaConnectList;
+import io.strimzi.api.kafka.model.connector.KafkaConnector;
+import io.strimzi.api.kafka.model.connector.KafkaConnectorList;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaList;
+import io.strimzi.api.kafka.model.mirrormaker.KafkaMirrorMaker;
+import io.strimzi.api.kafka.model.mirrormaker.KafkaMirrorMakerList;
+import io.strimzi.api.kafka.model.mirrormaker2.KafkaMirrorMaker2;
+import io.strimzi.api.kafka.model.mirrormaker2.KafkaMirrorMaker2List;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePool;
+import io.strimzi.api.kafka.model.nodepool.KafkaNodePoolList;
+import io.strimzi.api.kafka.model.rebalance.KafkaRebalance;
+import io.strimzi.api.kafka.model.rebalance.KafkaRebalanceList;
 import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
 import io.strimzi.operator.cluster.model.DefaultSharedEnvironmentProvider;
 import io.strimzi.operator.cluster.model.SharedEnvironmentProvider;
+import io.strimzi.operator.cluster.operator.assembly.BrokersInUseCheck;
 import io.strimzi.operator.cluster.operator.resource.events.KubernetesRestartEventPublisher;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.BuildConfigOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.BuildOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.ClusterRoleBindingOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.ConfigMapOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.CrdOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.DeploymentOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.ImageStreamOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.IngressOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.NetworkPolicyOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.NodeOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.PodDisruptionBudgetOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.PodOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.PvcOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.RoleBindingOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.RoleOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.RouteOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.SecretOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.ServiceAccountOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.ServiceOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.StatefulSetOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.StorageClassOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.StrimziPodSetOperator;
 import io.strimzi.operator.common.AdminClientProvider;
 import io.strimzi.operator.common.BackOff;
 import io.strimzi.operator.common.DefaultAdminClientProvider;
 import io.strimzi.operator.common.MetricsProvider;
-import io.strimzi.operator.common.operator.resource.BuildConfigOperator;
-import io.strimzi.operator.common.operator.resource.BuildOperator;
-import io.strimzi.operator.common.operator.resource.ClusterRoleBindingOperator;
-import io.strimzi.operator.common.operator.resource.ConfigMapOperator;
-import io.strimzi.operator.common.operator.resource.CrdOperator;
-import io.strimzi.operator.common.operator.resource.DeploymentOperator;
-import io.strimzi.operator.common.operator.resource.ImageStreamOperator;
-import io.strimzi.operator.common.operator.resource.IngressOperator;
-import io.strimzi.operator.common.operator.resource.NetworkPolicyOperator;
-import io.strimzi.operator.common.operator.resource.NodeOperator;
-import io.strimzi.operator.common.operator.resource.PodDisruptionBudgetOperator;
-import io.strimzi.operator.common.operator.resource.PodOperator;
-import io.strimzi.operator.common.operator.resource.PvcOperator;
-import io.strimzi.operator.common.operator.resource.RoleBindingOperator;
-import io.strimzi.operator.common.operator.resource.RoleOperator;
-import io.strimzi.operator.common.operator.resource.RouteOperator;
-import io.strimzi.operator.common.operator.resource.SecretOperator;
-import io.strimzi.operator.common.operator.resource.ServiceAccountOperator;
-import io.strimzi.operator.common.operator.resource.ServiceOperator;
-import io.strimzi.operator.common.operator.resource.StorageClassOperator;
-import io.strimzi.operator.common.operator.resource.StrimziPodSetOperator;
 import io.vertx.core.Vertx;
 
 /**
@@ -226,6 +228,16 @@ public class ResourceOperatorSupplier {
     public final ZookeeperLeaderFinder zookeeperLeaderFinder;
 
     /**
+     * Kafka Agent client provider
+     */
+    public final KafkaAgentClientProvider kafkaAgentClientProvider;
+
+    /**
+     * ZooKeeper Admin client provider
+     */
+    public final ZooKeeperAdminProvider zooKeeperAdminProvider;
+
+    /**
      * Restart Events publisher
      */
     public final KubernetesRestartEventPublisher restartEventsPublisher;
@@ -234,6 +246,11 @@ public class ResourceOperatorSupplier {
      * Shared environment provider
      */
     public final SharedEnvironmentProvider sharedEnvironmentProvider;
+
+    /**
+     * Broker Scale Down operations
+     */
+    public final BrokersInUseCheck brokersInUseCheck;
 
     /**
      * Constructor
@@ -253,7 +270,9 @@ public class ResourceOperatorSupplier {
                         () -> new BackOff(5_000, 2, 4)),
                 new DefaultAdminClientProvider(),
                 new DefaultZookeeperScalerProvider(),
+                new DefaultKafkaAgentClientProvider(),
                 metricsProvider,
+                new DefaultZooKeeperAdminProvider(),
                 pfa,
                 operationTimeoutMs,
                 new KubernetesRestartEventPublisher(client, operatorName)
@@ -263,21 +282,25 @@ public class ResourceOperatorSupplier {
     /**
      * Constructor used for tests
      *
-     * @param vertx                 Vert.x instance
-     * @param client                Kubernetes Client
-     * @param zlf                   ZooKeeper Leader Finder
-     * @param adminClientProvider   Kafka Admin client provider
-     * @param zkScalerProvider      ZooKeeper Scaler provider
-     * @param metricsProvider       Metrics provider
-     * @param pfa                   Platform Availability Features
-     * @param operationTimeoutMs    Operation timeout in milliseconds
+     * @param vertx                     Vert.x instance
+     * @param client                    Kubernetes Client
+     * @param zlf                       ZooKeeper Leader Finder
+     * @param adminClientProvider       Kafka Admin client provider
+     * @param zkScalerProvider          ZooKeeper Scaler provider
+     * @param kafkaAgentClientProvider  Kafka Agent client provider
+     * @param metricsProvider           Metrics provider
+     * @param zkAdminProvider           ZooKeeper Admin client provider
+     * @param pfa                       Platform Availability Features
+     * @param operationTimeoutMs        Operation timeout in milliseconds
      */
     public ResourceOperatorSupplier(Vertx vertx,
                                     KubernetesClient client,
                                     ZookeeperLeaderFinder zlf,
                                     AdminClientProvider adminClientProvider,
                                     ZookeeperScalerProvider zkScalerProvider,
+                                    KafkaAgentClientProvider kafkaAgentClientProvider,
                                     MetricsProvider metricsProvider,
+                                    ZooKeeperAdminProvider zkAdminProvider,
                                     PlatformFeaturesAvailability pfa,
                                     long operationTimeoutMs) {
         this(vertx,
@@ -285,7 +308,9 @@ public class ResourceOperatorSupplier {
                 zlf,
                 adminClientProvider,
                 zkScalerProvider,
+                kafkaAgentClientProvider,
                 metricsProvider,
+                zkAdminProvider,
                 pfa,
                 operationTimeoutMs,
                 new KubernetesRestartEventPublisher(client, "operatorName")
@@ -293,14 +318,16 @@ public class ResourceOperatorSupplier {
     }
 
     private ResourceOperatorSupplier(Vertx vertx,
-                                    KubernetesClient client,
-                                    ZookeeperLeaderFinder zlf,
-                                    AdminClientProvider adminClientProvider,
-                                    ZookeeperScalerProvider zkScalerProvider,
-                                    MetricsProvider metricsProvider,
-                                    PlatformFeaturesAvailability pfa,
-                                    long operationTimeoutMs,
-                                    KubernetesRestartEventPublisher restartEventPublisher) {
+                                     KubernetesClient client,
+                                     ZookeeperLeaderFinder zlf,
+                                     AdminClientProvider adminClientProvider,
+                                     ZookeeperScalerProvider zkScalerProvider,
+                                     KafkaAgentClientProvider kafkaAgentClientProvider,
+                                     MetricsProvider metricsProvider,
+                                     ZooKeeperAdminProvider zkAdminProvider,
+                                     PlatformFeaturesAvailability pfa,
+                                     long operationTimeoutMs,
+                                     KubernetesRestartEventPublisher restartEventPublisher) {
         this(new ServiceOperator(vertx, client),
                 pfa.hasRoutes() ? new RouteOperator(vertx, client.adapt(OpenShiftClient.class)) : null,
                 pfa.hasImages() ? new ImageStreamOperator(vertx, client.adapt(OpenShiftClient.class)) : null,
@@ -331,11 +358,14 @@ public class ResourceOperatorSupplier {
                 new StorageClassOperator(vertx, client),
                 new NodeOperator(vertx, client),
                 zkScalerProvider,
+                kafkaAgentClientProvider,
                 metricsProvider,
                 adminClientProvider,
                 zlf,
+                zkAdminProvider,
                 restartEventPublisher,
-                new DefaultSharedEnvironmentProvider());
+                new DefaultSharedEnvironmentProvider(),
+                new BrokersInUseCheck());
     }
 
     /**
@@ -371,11 +401,14 @@ public class ResourceOperatorSupplier {
      * @param storageClassOperator                  StorageClass operator
      * @param nodeOperator                          Node operator
      * @param zkScalerProvider                      ZooKeeper Scaler provider
+     * @param kafkaAgentClientProvider              Kafka Agent client provider
      * @param metricsProvider                       Metrics provider
      * @param adminClientProvider                   Kafka Admin client provider
      * @param zookeeperLeaderFinder                 ZooKeeper Leader Finder
+     * @param zooKeeperAdminProvider                ZooKeeper Admin client provider
      * @param restartEventsPublisher                Kubernetes Events publisher
-     * @param sharedEnvironmentProvider                 Shared environment provider
+     * @param sharedEnvironmentProvider             Shared environment provider
+     * @param brokersInUseCheck                     Broker scale down operations
      */
     @SuppressWarnings({"checkstyle:ParameterNumber"})
     public ResourceOperatorSupplier(ServiceOperator serviceOperations,
@@ -408,11 +441,14 @@ public class ResourceOperatorSupplier {
                                     StorageClassOperator storageClassOperator,
                                     NodeOperator nodeOperator,
                                     ZookeeperScalerProvider zkScalerProvider,
+                                    KafkaAgentClientProvider kafkaAgentClientProvider,
                                     MetricsProvider metricsProvider,
                                     AdminClientProvider adminClientProvider,
                                     ZookeeperLeaderFinder zookeeperLeaderFinder,
+                                    ZooKeeperAdminProvider zooKeeperAdminProvider,
                                     KubernetesRestartEventPublisher restartEventsPublisher,
-                                    SharedEnvironmentProvider sharedEnvironmentProvider) {
+                                    SharedEnvironmentProvider sharedEnvironmentProvider,
+                                    BrokersInUseCheck brokersInUseCheck) {
         this.serviceOperations = serviceOperations;
         this.routeOperations = routeOperations;
         this.imageStreamOperations = imageStreamOperations;
@@ -443,10 +479,13 @@ public class ResourceOperatorSupplier {
         this.strimziPodSetOperator = strimziPodSetOperator;
         this.nodeOperator = nodeOperator;
         this.zkScalerProvider = zkScalerProvider;
+        this.kafkaAgentClientProvider = kafkaAgentClientProvider;
         this.metricsProvider = metricsProvider;
         this.adminClientProvider = adminClientProvider;
         this.zookeeperLeaderFinder = zookeeperLeaderFinder;
+        this.zooKeeperAdminProvider = zooKeeperAdminProvider;
         this.restartEventsPublisher = restartEventsPublisher;
         this.sharedEnvironmentProvider = sharedEnvironmentProvider;
+        this.brokersInUseCheck = brokersInUseCheck;
     }
 }

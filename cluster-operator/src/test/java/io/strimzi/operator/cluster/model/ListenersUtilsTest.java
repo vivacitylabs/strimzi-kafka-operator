@@ -4,15 +4,15 @@
  */
 package io.strimzi.operator.cluster.model;
 
-import io.strimzi.api.kafka.model.listener.NodeAddressType;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListener;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerConfigurationBroker;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerConfigurationBrokerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
-import io.strimzi.api.kafka.model.template.ExternalTrafficPolicy;
-import io.strimzi.api.kafka.model.template.IpFamily;
-import io.strimzi.api.kafka.model.template.IpFamilyPolicy;
+import io.strimzi.api.kafka.model.common.template.ExternalTrafficPolicy;
+import io.strimzi.api.kafka.model.common.template.IpFamily;
+import io.strimzi.api.kafka.model.common.template.IpFamilyPolicy;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListener;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerConfigurationBroker;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerConfigurationBrokerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
+import io.strimzi.api.kafka.model.kafka.listener.NodeAddressType;
 import io.strimzi.test.annotations.ParallelSuite;
 import io.strimzi.test.annotations.ParallelTest;
 
@@ -151,6 +151,7 @@ public class ListenersUtilsTest {
                 .withIpFamilyPolicy(IpFamilyPolicy.REQUIRE_DUAL_STACK)
                 .withIpFamilies(IpFamily.IPV6, IpFamily.IPV4)
                 .withPreferredNodePortAddressType(NodeAddressType.INTERNAL_DNS)
+                .withPublishNotReadyAddresses(true)
                 .withNewBootstrap()
                     .withAlternativeNames(asList("my-np-1", "my-np-2"))
                     .withNodePort(32189)
@@ -201,6 +202,7 @@ public class ListenersUtilsTest {
                 .withIpFamilies(IpFamily.IPV6, IpFamily.IPV4)
                 .withLoadBalancerSourceRanges(asList("10.0.0.0/8", "130.211.204.1/32"))
                 .withFinalizers(List.of("service.kubernetes.io/load-balancer-cleanup"))
+                .withPublishNotReadyAddresses(false)
                 .withNewBootstrap()
                     .withAlternativeNames(asList("my-lb-1", "my-lb-2"))
                     .withLoadBalancerIP("130.211.204.1")
@@ -640,6 +642,19 @@ public class ListenersUtilsTest {
         assertThat(ListenersUtils.preferredNodeAddressType(newNodePort), is(nullValue()));
         assertThat(ListenersUtils.preferredNodeAddressType(newNodePort2), is(NodeAddressType.INTERNAL_DNS));
         assertThat(ListenersUtils.preferredNodeAddressType(newNodePort3), is(nullValue()));
+    }
+    
+    @ParallelTest
+    public void testPublishNotReadyAddresses() {
+        assertThat(ListenersUtils.publishNotReadyAddresses(newLoadBalancer), is(nullValue()));
+        assertThat(ListenersUtils.publishNotReadyAddresses(oldExternal), is(nullValue()));
+        assertThat(ListenersUtils.publishNotReadyAddresses(newLoadBalancer), is(nullValue()));
+        assertThat(ListenersUtils.publishNotReadyAddresses(newLoadBalancer2), is(false));
+        assertThat(ListenersUtils.publishNotReadyAddresses(oldPlain), is(nullValue()));
+        assertThat(ListenersUtils.publishNotReadyAddresses(newTls), is(nullValue()));
+        assertThat(ListenersUtils.publishNotReadyAddresses(newNodePort), is(nullValue()));
+        assertThat(ListenersUtils.publishNotReadyAddresses(newNodePort2), is(true));
+        assertThat(ListenersUtils.publishNotReadyAddresses(newNodePort3), is(nullValue()));
     }
 
     @ParallelTest

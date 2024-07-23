@@ -5,12 +5,14 @@
 package io.strimzi.operator.common.operator.resource.concurrent;
 
 import io.fabric8.kubernetes.api.model.DefaultKubernetesResourceList;
+import io.fabric8.kubernetes.api.model.DeletionPropagation;
+import io.fabric8.kubernetes.api.model.NamespaceBuilder;
 import io.fabric8.kubernetes.client.CustomResource;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
 import io.fabric8.kubernetes.client.KubernetesClientException;
-import io.strimzi.api.kafka.model.status.Condition;
-import io.strimzi.api.kafka.model.status.ConditionBuilder;
+import io.strimzi.api.kafka.model.common.Condition;
+import io.strimzi.api.kafka.model.common.ConditionBuilder;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.Util;
 import io.strimzi.test.TestUtils;
@@ -23,11 +25,11 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import java.util.Objects;
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static io.strimzi.test.k8s.KubeClusterResource.cmdKubeClient;
-import static io.strimzi.test.k8s.KubeClusterResource.kubeClient;
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.is;
@@ -76,15 +78,15 @@ public abstract class AbstractCustomResourceOperatorIT<
         assertDoesNotThrow(KubeCluster::bootstrap, "Could not bootstrap server");
         client = new KubernetesClientBuilder().build();
 
-        if (cluster.getNamespace() != null && System.getenv("SKIP_TEARDOWN") == null) {
+        if (client.namespaces().withName(namespace).get() != null && System.getenv("SKIP_TEARDOWN") == null) {
             LOGGER.warn("Namespace {} is already created, going to delete it", namespace);
-            kubeClient().deleteNamespace(namespace);
-            cmdKubeClient().waitForResourceDeletion("Namespace", namespace);
+            client.namespaces().withName(namespace).withPropagationPolicy(DeletionPropagation.BACKGROUND).delete();
+            client.namespaces().withName(namespace).waitUntilCondition(Objects::isNull, 30_000, TimeUnit.MILLISECONDS);
         }
 
         LOGGER.info("Creating namespace: {}", namespace);
-        kubeClient().createNamespace(namespace);
-        cmdKubeClient().waitForResourceCreation("Namespace", namespace);
+        client.namespaces().resource(new NamespaceBuilder().withNewMetadata().withName(namespace).endMetadata().build()).create();
+        client.namespaces().withName(namespace).waitUntilCondition(ns -> ns.getStatus() != null && "Active".equals(ns.getStatus().getPhase()), 30_000, TimeUnit.MILLISECONDS);
 
         LOGGER.info("Creating CRD");
         cluster.createCustomResources(getCrd());
@@ -95,10 +97,10 @@ public abstract class AbstractCustomResourceOperatorIT<
     @AfterAll
     public void after() {
         String namespace = getNamespace();
-        if (kubeClient().getNamespace(namespace) != null && System.getenv("SKIP_TEARDOWN") == null) {
+        if (client.namespaces().withName(namespace).get() != null && System.getenv("SKIP_TEARDOWN") == null) {
             LOGGER.warn("Deleting namespace {} after tests run", namespace);
-            kubeClient().deleteNamespace(namespace);
-            cmdKubeClient().waitForResourceDeletion("Namespace", namespace);
+            client.namespaces().withName(namespace).withPropagationPolicy(DeletionPropagation.BACKGROUND).delete();
+            client.namespaces().withName(namespace).waitUntilCondition(Objects::isNull, 30_000, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -126,7 +128,10 @@ public abstract class AbstractCustomResourceOperatorIT<
     }
 
     /**
-     * Tests what happens when the resource is deleted while updating the status
+     * Tests what happens when the resource is deleted while updating the status.
+     *
+     * The CR removal does not consistently complete within the default timeout.
+     * This requires increasing the timeout for completion to 1 minute.
      */
     @Test
     public void testUpdateStatusAfterResourceDeletedThrowsKubernetesClientException() {
@@ -145,17 +150,15 @@ public abstract class AbstractCustomResourceOperatorIT<
                 return op.deleteAsync(Reconciliation.DUMMY_RECONCILIATION, namespace, resourceName, false);
             })
             .thenCompose(i -> {
-                LOGGER.info("Wait for confirmed deletion");
-                return op.waitFor(Reconciliation.DUMMY_RECONCILIATION, namespace, resourceName, 100L, 10_000L, (n, ns) -> operator().get(namespace, resourceName) == null);
-            })
-            .thenCompose(i -> {
                 LOGGER.info("Updating resource with new status - should fail");
                 return op.updateStatusAsync(Reconciliation.DUMMY_RECONCILIATION, newStatus.get());
             })
             .<Void>handle((i, error) -> {
                 assertThat(Util.unwrap(error), instanceOf(KubernetesClientException.class));
                 return null;
-            }));
+            }),
+            1,
+            TimeUnit.MINUTES);
     }
 
     /**

@@ -10,26 +10,26 @@ import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.LocalObjectReference;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.openshift.api.model.Build;
-import io.strimzi.api.kafka.model.KafkaConnectResources;
+import io.strimzi.api.kafka.model.connect.KafkaConnectResources;
 import io.strimzi.api.kafka.model.connect.build.Output;
-import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
 import io.strimzi.operator.cluster.ClusterOperatorConfig;
+import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
 import io.strimzi.operator.cluster.model.ImagePullPolicy;
 import io.strimzi.operator.cluster.model.KafkaConnectBuild;
 import io.strimzi.operator.cluster.model.KafkaConnectBuildUtils;
 import io.strimzi.operator.cluster.model.KafkaConnectDockerfile;
 import io.strimzi.operator.cluster.operator.resource.ResourceOperatorSupplier;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.BuildConfigOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.BuildOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.ConfigMapOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.ImageStreamOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.PodOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.ServiceAccountOperator;
 import io.strimzi.operator.common.Annotations;
 import io.strimzi.operator.common.InvalidConfigurationException;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.ReconciliationLogger;
 import io.strimzi.operator.common.Util;
-import io.strimzi.operator.common.operator.resource.BuildConfigOperator;
-import io.strimzi.operator.common.operator.resource.BuildOperator;
-import io.strimzi.operator.common.operator.resource.ConfigMapOperator;
-import io.strimzi.operator.common.operator.resource.ImageStreamOperator;
-import io.strimzi.operator.common.operator.resource.PodOperator;
-import io.strimzi.operator.common.operator.resource.ServiceAccountOperator;
 import io.vertx.core.Future;
 
 import java.util.List;
@@ -58,7 +58,7 @@ public class ConnectBuildOperator {
      *
      * @param pfa       Describes the features available in the Kubernetes cluster
      * @param supplier  Resource operator supplier
-     * @param config    Cluster OPerator configuration
+     * @param config    Cluster operator configuration
      */
     public ConnectBuildOperator(PlatformFeaturesAvailability pfa, ResourceOperatorSupplier supplier, ClusterOperatorConfig config) {
         this.imageStreamOperations = supplier.imageStreamOperations;
@@ -118,7 +118,7 @@ public class ConnectBuildOperator {
             // Extract information from the current controllerResource. This is used to figure out if new build needs to be run or not.
             currentBuildRevision = Annotations.stringAnnotation(controllerResource, Annotations.STRIMZI_IO_CONNECT_BUILD_REVISION, null);
             currentImage = Annotations.stringAnnotation(controllerResource, Annotations.STRIMZI_IO_CONNECT_BUILD_IMAGE, null);
-            forceRebuild = Annotations.hasAnnotation(controllerResource, Annotations.STRIMZI_IO_CONNECT_FORCE_REBUILD);
+            forceRebuild = Annotations.booleanAnnotation(controllerResource, Annotations.STRIMZI_IO_CONNECT_FORCE_REBUILD, false);
         }
 
         KafkaConnectDockerfile dockerfile = connectBuild.generateDockerfile();
@@ -327,12 +327,12 @@ public class ConnectBuildOperator {
      * Checks if the image stream is required and exists.
      *
      * @param namespace     Namespace where the BuildConfig exists
-     * @param buidlOutput   Build output configuration
+     * @param buildOutput   Build output configuration
      * @return              Future that completes when the check completes
      */
-    public Future<Void> validateImageStream(String namespace, Output buidlOutput)   {
-        if (buidlOutput != null && buidlOutput.getType().equals(Output.TYPE_IMAGESTREAM)) {
-            String imageName = buidlOutput.getImage().split(":")[0];
+    public Future<Void> validateImageStream(String namespace, Output buildOutput)   {
+        if (buildOutput != null && buildOutput.getType().equals(Output.TYPE_IMAGESTREAM)) {
+            String imageName = buildOutput.getImage().split(":")[0];
             return imageStreamOperations.getAsync(namespace, imageName)
                 .compose(is -> {
                     if (is == null) {

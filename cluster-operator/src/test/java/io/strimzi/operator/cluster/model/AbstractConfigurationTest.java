@@ -4,16 +4,16 @@
  */
 package io.strimzi.operator.cluster.model;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
-import io.strimzi.operator.common.model.InvalidConfigParameterException;
 import io.strimzi.operator.common.Reconciliation;
+import io.strimzi.operator.common.model.InvalidConfigParameterException;
 import io.strimzi.operator.common.model.OrderedProperties;
 import io.strimzi.test.annotations.ParallelSuite;
 import io.strimzi.test.annotations.ParallelTest;
 import io.vertx.core.json.JsonObject;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import static io.strimzi.test.TestUtils.LINE_SEPARATOR;
 import static java.util.Arrays.asList;
@@ -319,7 +319,7 @@ class TestConfiguration extends AbstractConfiguration {
      * Constructor used to instantiate this class from String configuration. Should be used to create configuration
      * from the Assembly.
      *
-     * @param configuration Configuration in String format. Should contain zero or more lines with with key=value
+     * @param configuration Configuration in String format. Should contain zero or more lines with key=value
      *                      pairs.
      */
     public TestConfiguration(String configuration) {
@@ -349,7 +349,7 @@ class TestConfigurationWithoutDefaults extends AbstractConfiguration {
      * Constructor used to instantiate this class from String configuration. Should be used to create configuration
      * from the Assembly.
      *
-     * @param configuration Configuration in String format. Should contain zero or more lines with with key=value
+     * @param configuration Configuration in String format. Should contain zero or more lines with key=value
      *                      pairs.
      */
     public TestConfigurationWithoutDefaults(String configuration) {

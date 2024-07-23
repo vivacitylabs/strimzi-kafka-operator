@@ -16,12 +16,12 @@ import io.fabric8.kubernetes.api.model.rbac.RoleRef;
 import io.fabric8.kubernetes.api.model.rbac.RoleRefBuilder;
 import io.fabric8.kubernetes.api.model.rbac.Subject;
 import io.fabric8.kubernetes.api.model.rbac.SubjectBuilder;
-import io.strimzi.api.kafka.model.CertificateAuthority;
-import io.strimzi.api.kafka.model.EntityUserOperatorSpec;
-import io.strimzi.api.kafka.model.JvmOptions;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.template.ResourceTemplate;
+import io.strimzi.api.kafka.model.common.CertificateAuthority;
+import io.strimzi.api.kafka.model.common.JvmOptions;
+import io.strimzi.api.kafka.model.common.template.ResourceTemplate;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.entityoperator.EntityUserOperatorSpec;
 import io.strimzi.operator.cluster.ClusterOperatorConfig;
 import io.strimzi.operator.cluster.model.logging.LoggingModel;
 import io.strimzi.operator.cluster.model.logging.SupportsLogging;
@@ -31,6 +31,7 @@ import io.strimzi.operator.common.Reconciliation;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Represents the User Operator deployment
@@ -40,7 +41,6 @@ public class EntityUserOperator extends AbstractModel implements SupportsLogging
     
     protected static final String USER_OPERATOR_CONTAINER_NAME = "user-operator";
     private static final String NAME_SUFFIX = "-entity-user-operator";
-    private static final String CERT_SECRET_KEY_NAME = "entity-operator";
 
     private static final String LOG_AND_METRICS_CONFIG_VOLUME_NAME = "entity-user-operator-metrics-and-logging";
     private static final String LOG_AND_METRICS_CONFIG_VOLUME_MOUNT = "/opt/user-operator/custom-config/";
@@ -69,14 +69,15 @@ public class EntityUserOperator extends AbstractModel implements SupportsLogging
     // Because the container shares the pod with other containers, it needs to have unique name
     /*test*/ static final String USER_OPERATOR_TMP_DIRECTORY_DEFAULT_VOLUME_NAME = "strimzi-uo-tmp";
 
-    /* test */ String kafkaBootstrapServers;
+    /* test */ final String kafkaBootstrapServers;
     private String watchedNamespace;
-    /* test */ String resourceLabels;
+    private final String resourceLabels;
     /* test */ String secretPrefix;
-    /* test */ long reconciliationIntervalMs;
+    /* test */ Long reconciliationIntervalMs;
     /* test */ int clientsCaValidityDays;
     /* test */ int clientsCaRenewalDays;
     private ResourceTemplate templateRoleBinding;
+    private String featureGatesEnvVarValue;
 
     private boolean aclsAdminApiSupported = false;
     private List<String> maintenanceWindows;
@@ -92,7 +93,6 @@ public class EntityUserOperator extends AbstractModel implements SupportsLogging
 
         // create a default configuration
         this.kafkaBootstrapServers = KafkaResources.bootstrapServiceName(cluster) + ":" + EntityUserOperatorSpec.DEFAULT_BOOTSTRAP_SERVERS_PORT;
-        this.reconciliationIntervalMs = EntityUserOperatorSpec.DEFAULT_FULL_RECONCILIATION_INTERVAL_SECONDS * 1_000;
         this.secretPrefix = EntityUserOperatorSpec.DEFAULT_SECRET_PREFIX;
         this.resourceLabels = ModelUtils.defaultResourceLabels(cluster);
 
@@ -107,10 +107,14 @@ public class EntityUserOperator extends AbstractModel implements SupportsLogging
      * @param reconciliation                The reconciliation
      * @param kafkaAssembly                 Desired resource with cluster configuration containing the Entity User Operator one
      * @param sharedEnvironmentProvider     Shared environment provider
+     * @param config                        Cluster Operator configuration
      *
      * @return Entity User Operator instance, null if not configured
      */
-    public static EntityUserOperator fromCrd(Reconciliation reconciliation, Kafka kafkaAssembly, SharedEnvironmentProvider sharedEnvironmentProvider) {
+    public static EntityUserOperator fromCrd(Reconciliation reconciliation,
+                                             Kafka kafkaAssembly,
+                                             SharedEnvironmentProvider sharedEnvironmentProvider,
+                                             ClusterOperatorConfig config) {
         if (kafkaAssembly.getSpec().getEntityOperator() != null
                 && kafkaAssembly.getSpec().getEntityOperator().getUserOperator() != null) {
             EntityUserOperatorSpec userOperatorSpec = kafkaAssembly.getSpec().getEntityOperator().getUserOperator();
@@ -123,7 +127,7 @@ public class EntityUserOperator extends AbstractModel implements SupportsLogging
             result.image = image;
 
             result.watchedNamespace = userOperatorSpec.getWatchedNamespace() != null ? userOperatorSpec.getWatchedNamespace() : kafkaAssembly.getMetadata().getNamespace();
-            result.reconciliationIntervalMs = userOperatorSpec.getReconciliationIntervalSeconds() * 1_000;
+            result.reconciliationIntervalMs = configuredReconciliationIntervalMs(userOperatorSpec);
             result.secretPrefix = userOperatorSpec.getSecretPrefix() == null ? EntityUserOperatorSpec.DEFAULT_SECRET_PREFIX : userOperatorSpec.getSecretPrefix();
             result.logging = new LoggingModel(userOperatorSpec, result.getClass().getSimpleName(), true, false);
             result.gcLoggingEnabled = userOperatorSpec.getJvmOptions() == null ? JvmOptions.DEFAULT_GC_LOGGING_ENABLED : userOperatorSpec.getJvmOptions().isGcLoggingEnabled();
@@ -131,6 +135,7 @@ public class EntityUserOperator extends AbstractModel implements SupportsLogging
             result.resources = userOperatorSpec.getResources();
             result.readinessProbeOptions = ProbeUtils.extractReadinessProbeOptionsOrDefault(userOperatorSpec, EntityOperator.DEFAULT_HEALTHCHECK_OPTIONS);
             result.livenessProbeOptions = ProbeUtils.extractLivenessProbeOptionsOrDefault(userOperatorSpec, EntityOperator.DEFAULT_HEALTHCHECK_OPTIONS);
+            result.featureGatesEnvVarValue = config.featureGates().toEnvironmentVariable();
 
             if (kafkaAssembly.getSpec().getEntityOperator().getTemplate() != null)  {
                 result.templateRoleBinding = kafkaAssembly.getSpec().getEntityOperator().getTemplate().getUserOperatorRoleBinding();
@@ -162,6 +167,13 @@ public class EntityUserOperator extends AbstractModel implements SupportsLogging
         }
     }
 
+    @SuppressWarnings("deprecation")
+    private static Long configuredReconciliationIntervalMs(EntityUserOperatorSpec spec) {
+        // if they are both set reconciliationIntervalMs takes precedence
+        return (spec.getReconciliationIntervalMs() != null) ? spec.getReconciliationIntervalMs()
+            : (spec.getReconciliationIntervalSeconds() != null) ? TimeUnit.SECONDS.toMillis(spec.getReconciliationIntervalSeconds()) : null;
+    }
+
     protected Container createContainer(ImagePullPolicy imagePullPolicy) {
         return ContainerUtils.createContainer(
                 USER_OPERATOR_CONTAINER_NAME,
@@ -183,7 +195,9 @@ public class EntityUserOperator extends AbstractModel implements SupportsLogging
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_KAFKA_BOOTSTRAP_SERVERS, kafkaBootstrapServers));
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_WATCHED_NAMESPACE, watchedNamespace));
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_RESOURCE_LABELS, resourceLabels));
-        varList.add(ContainerUtils.createEnvVar(ENV_VAR_FULL_RECONCILIATION_INTERVAL_MS, Long.toString(reconciliationIntervalMs)));
+        if (reconciliationIntervalMs != null) {
+            varList.add(ContainerUtils.createEnvVar(ENV_VAR_FULL_RECONCILIATION_INTERVAL_MS, Long.toString(reconciliationIntervalMs)));
+        }
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_CLIENTS_CA_KEY_SECRET_NAME, KafkaResources.clientsCaKeySecretName(cluster)));
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_CLIENTS_CA_CERT_SECRET_NAME, KafkaResources.clientsCaCertificateSecretName(cluster)));
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_CLIENTS_CA_NAMESPACE, namespace));
@@ -195,6 +209,11 @@ public class EntityUserOperator extends AbstractModel implements SupportsLogging
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_SECRET_PREFIX, secretPrefix));
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_ACLS_ADMIN_API_SUPPORTED, String.valueOf(aclsAdminApiSupported)));
         JvmOptionUtils.javaOptions(varList, jvmOptions);
+
+        // Add feature gates configuration if not empty
+        if (featureGatesEnvVarValue != null && !featureGatesEnvVarValue.isEmpty()) {
+            varList.add(ContainerUtils.createEnvVar(ClusterOperatorConfig.FEATURE_GATES.key(), featureGatesEnvVarValue));
+        }
 
         // Add shared environment variables used for all containers
         varList.addAll(sharedEnvironmentProvider.variables());
@@ -254,19 +273,19 @@ public class EntityUserOperator extends AbstractModel implements SupportsLogging
     }
 
     /**
-     * Generate the Secret containing the Entity User Operator certificate signed by the cluster CA certificate used for TLS based
-     * internal communication with Kafka and Zookeeper.
-     * It also contains the related Entity User Operator private key.
+     * Generate the Secret containing the Entity User Operator certificate signed by the cluster CA certificate used for
+     * TLS based internal communication with Kafka.
      *
-     * @param clusterCa The cluster CA.
-     * @param isMaintenanceTimeWindowsSatisfied Indicates whether we are in the maintenance window or not.
-     *                                          This is used for certificate renewals
+     * @param clusterCa                             The cluster CA.
+     * @param existingSecret                        The existing secret with Kafka certificates
+     * @param isMaintenanceTimeWindowsSatisfied     Indicates whether we are in the maintenance window or not.
+     *                                              This is used for certificate renewals
+     *
      * @return The generated Secret.
      */
-    public Secret generateSecret(ClusterCa clusterCa, boolean isMaintenanceTimeWindowsSatisfied) {
-        Secret secret = clusterCa.entityUserOperatorSecret();
-        return ModelUtils.buildSecret(reconciliation, clusterCa, secret, namespace, KafkaResources.entityUserOperatorSecretName(cluster), componentName,
-            CERT_SECRET_KEY_NAME, labels, ownerReference, isMaintenanceTimeWindowsSatisfied);
+    public Secret generateCertificatesSecret(ClusterCa clusterCa, Secret existingSecret, boolean isMaintenanceTimeWindowsSatisfied) {
+        return CertUtils.buildTrustedCertificateSecret(reconciliation, clusterCa, existingSecret, namespace, KafkaResources.entityUserOperatorSecretName(cluster), componentName,
+            EntityOperator.COMPONENT_TYPE, labels, ownerReference, isMaintenanceTimeWindowsSatisfied);
     }
 
     /**

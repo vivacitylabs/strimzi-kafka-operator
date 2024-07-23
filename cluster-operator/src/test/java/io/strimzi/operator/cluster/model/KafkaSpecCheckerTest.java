@@ -4,14 +4,18 @@
  */
 package io.strimzi.operator.cluster.model;
 
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
-import io.strimzi.api.kafka.model.status.Condition;
-import io.strimzi.api.kafka.model.storage.EphemeralStorage;
-import io.strimzi.api.kafka.model.storage.EphemeralStorageBuilder;
-import io.strimzi.api.kafka.model.storage.JbodStorageBuilder;
+import io.strimzi.api.kafka.model.common.Condition;
+import io.strimzi.api.kafka.model.kafka.EphemeralStorage;
+import io.strimzi.api.kafka.model.kafka.EphemeralStorageBuilder;
+import io.strimzi.api.kafka.model.kafka.JbodStorage;
+import io.strimzi.api.kafka.model.kafka.JbodStorageBuilder;
+import io.strimzi.api.kafka.model.kafka.KRaftMetadataStorage;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
+import io.strimzi.api.kafka.model.kafka.PersistentClaimStorage;
+import io.strimzi.api.kafka.model.kafka.PersistentClaimStorageBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
 import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.cluster.model.nodepools.NodePoolUtils;
@@ -38,9 +42,9 @@ public class KafkaSpecCheckerTest {
     private static final int HEALTH_DELAY = 120;
     private static final int HEALTH_TIMEOUT = 30;
 
-    private KafkaSpecChecker generateChecker(Kafka kafka) {
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+    private KafkaSpecChecker generateChecker(Kafka kafka, KafkaVersionChange versionChange) {
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, versionChange, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
 
         return new KafkaSpecChecker(kafka.getSpec(), VERSIONS, kafkaCluster);
     }
@@ -55,7 +59,7 @@ public class KafkaSpecCheckerTest {
                 null, kafkaOptions, emptyMap(),
                 new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
         assertThat(checker.run(false), empty());
     }
 
@@ -71,7 +75,7 @@ public class KafkaSpecCheckerTest {
                 .endSpec()
             .build();
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(1));
         Condition warning = warnings.get(0);
@@ -94,7 +98,7 @@ public class KafkaSpecCheckerTest {
                 .endSpec()
             .build();
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(1));
         Condition warning = warnings.get(0);
@@ -120,7 +124,7 @@ public class KafkaSpecCheckerTest {
                 .endSpec()
             .build();
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, new KafkaVersionChange(VERSIONS.defaultVersion(), VERSIONS.defaultVersion(), VERSIONS.defaultVersion().protocolVersion(), KafkaVersionTestUtils.PREVIOUS_FORMAT_VERSION, null));
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(1));
         Condition warning = warnings.get(0);
@@ -140,7 +144,7 @@ public class KafkaSpecCheckerTest {
                 null, kafkaOptions, emptyMap(),
             new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, new KafkaVersionChange(VERSIONS.defaultVersion(), VERSIONS.defaultVersion(), VERSIONS.defaultVersion().protocolVersion(), KafkaVersionTestUtils.PREVIOUS_FORMAT_VERSION, null));
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(1));
         Condition warning = warnings.get(0);
@@ -160,7 +164,7 @@ public class KafkaSpecCheckerTest {
                 null, kafkaOptions, emptyMap(),
             new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(0));
     }
@@ -176,7 +180,7 @@ public class KafkaSpecCheckerTest {
                 null, kafkaOptions, emptyMap(),
             new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(0));
     }
@@ -199,7 +203,7 @@ public class KafkaSpecCheckerTest {
                 .endSpec()
             .build();
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, new KafkaVersionChange(VERSIONS.defaultVersion(), VERSIONS.defaultVersion(), KafkaVersionTestUtils.PREVIOUS_PROTOCOL_VERSION, VERSIONS.defaultVersion().messageVersion(), null));
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(1));
         Condition warning = warnings.get(0);
@@ -219,7 +223,7 @@ public class KafkaSpecCheckerTest {
                 null, kafkaOptions, emptyMap(),
             new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, new KafkaVersionChange(VERSIONS.defaultVersion(), VERSIONS.defaultVersion(), KafkaVersionTestUtils.PREVIOUS_PROTOCOL_VERSION, VERSIONS.defaultVersion().messageVersion(), null));
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(1));
         Condition warning = warnings.get(0);
@@ -239,7 +243,7 @@ public class KafkaSpecCheckerTest {
                 null, kafkaOptions, emptyMap(),
             new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(0));
     }
@@ -255,7 +259,7 @@ public class KafkaSpecCheckerTest {
                 null, kafkaOptions, emptyMap(),
             new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(0));
     }
@@ -266,7 +270,7 @@ public class KafkaSpecCheckerTest {
                 null, emptyMap(), emptyMap(),
                 new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(2));
     }
@@ -281,7 +285,7 @@ public class KafkaSpecCheckerTest {
                 null, kafkaOptions, emptyMap(),
                 new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(0));
     }
@@ -296,7 +300,7 @@ public class KafkaSpecCheckerTest {
                 null, kafkaOptions, emptyMap(),
                 new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(0));
     }
@@ -307,7 +311,7 @@ public class KafkaSpecCheckerTest {
                 null, emptyMap(), emptyMap(),
                 new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
         List<Condition> warnings = checker.run(false);
         // One warning is generated, but not the one we are testing here
         assertThat(warnings, hasSize(1));
@@ -321,10 +325,107 @@ public class KafkaSpecCheckerTest {
                 null, emptyMap(), emptyMap(),
                 new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
 
-        KafkaSpecChecker checker = generateChecker(kafka);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
         List<Condition> warnings = checker.run(false);
         assertThat(warnings, hasSize(2));
         assertThat(warnings.stream().anyMatch(w -> w.getMessage().contains(KafkaConfiguration.DEFAULT_REPLICATION_FACTOR)), is(true));
         assertThat(warnings.stream().anyMatch(w -> w.getMessage().contains(KafkaConfiguration.MIN_INSYNC_REPLICAS)), is(true));
+    }
+
+    @Test
+    public void checkKRaftMetadataConfigInZooKeeperMode() {
+        // Set to avoid unrelated warnings being raised here
+        Map<String, Object> kafkaOptions = new HashMap<>();
+        kafkaOptions.put(KafkaConfiguration.DEFAULT_REPLICATION_FACTOR, 3);
+        kafkaOptions.put(KafkaConfiguration.MIN_INSYNC_REPLICAS, 2);
+
+        // Kafka with ephemeral storage
+        EphemeralStorage ephemeralStorage = new EphemeralStorageBuilder()
+                .withKraftMetadata(KRaftMetadataStorage.SHARED)
+                .build();
+        Kafka kafka = ResourceUtils.createKafka(NAMESPACE, NAME, 3, IMAGE, HEALTH_DELAY, HEALTH_TIMEOUT,
+                null, kafkaOptions, emptyMap(), ephemeralStorage, new EphemeralStorage(), null, null, null, null);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
+
+        List<Condition> warnings = checker.run(false);
+        assertThat(warnings, hasSize(1));
+        assertThat(warnings.get(0).getReason(), is("KRaftMetadataStorageConfiguredWithoutKRaft"));
+        assertThat(warnings.get(0).getMessage(), is("The Kafka custom resource or one or more of the KafkaNodePool custom resources contain the kraftMetadata configuration. This configuration is supported only for KRaft-based Kafka clusters."));
+
+        // Check Persistent storage
+        PersistentClaimStorage persistentStorage = new PersistentClaimStorageBuilder()
+                .withSize("100Gi")
+                .withKraftMetadata(KRaftMetadataStorage.SHARED)
+                .build();
+        kafka.getSpec().getKafka().setStorage(persistentStorage);
+        checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
+
+        warnings = checker.run(false);
+        assertThat(warnings, hasSize(1));
+        assertThat(warnings.get(0).getReason(), is("KRaftMetadataStorageConfiguredWithoutKRaft"));
+        assertThat(warnings.get(0).getMessage(), is("The Kafka custom resource or one or more of the KafkaNodePool custom resources contain the kraftMetadata configuration. This configuration is supported only for KRaft-based Kafka clusters."));
+
+        // Check JBOD storage
+        JbodStorage jbodStorage = new JbodStorageBuilder()
+                .withVolumes(new PersistentClaimStorageBuilder()
+                                .withId(0)
+                                .withSize("100Gi")
+                                .build(),
+                        new PersistentClaimStorageBuilder()
+                                .withId(1)
+                                .withSize("100Gi")
+                                .withKraftMetadata(KRaftMetadataStorage.SHARED)
+                                .build())
+                .build();
+        kafka.getSpec().getKafka().setStorage(jbodStorage);
+        checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
+
+        warnings = checker.run(false);
+        assertThat(warnings, hasSize(1));
+        assertThat(warnings.get(0).getReason(), is("KRaftMetadataStorageConfiguredWithoutKRaft"));
+        assertThat(warnings.get(0).getMessage(), is("The Kafka custom resource or one or more of the KafkaNodePool custom resources contain the kraftMetadata configuration. This configuration is supported only for KRaft-based Kafka clusters."));
+    }
+
+    @Test
+    public void checkKRaftMetadataConfigNotUsedInZooKeeperMode() {
+        // Set to avoid unrelated warnings being raised here
+        Map<String, Object> kafkaOptions = new HashMap<>();
+        kafkaOptions.put(KafkaConfiguration.DEFAULT_REPLICATION_FACTOR, 3);
+        kafkaOptions.put(KafkaConfiguration.MIN_INSYNC_REPLICAS, 2);
+
+        // Kafka with ephemeral storage
+        Kafka kafka = ResourceUtils.createKafka(NAMESPACE, NAME, 3, IMAGE, HEALTH_DELAY, HEALTH_TIMEOUT,
+                null, kafkaOptions, emptyMap(), new EphemeralStorage(), new EphemeralStorage(), null, null, null, null);
+        KafkaSpecChecker checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
+
+        List<Condition> warnings = checker.run(false);
+        assertThat(warnings, hasSize(0));
+
+        // Check Persistent storage
+        PersistentClaimStorage persistentStorage = new PersistentClaimStorageBuilder()
+                .withSize("100Gi")
+                .build();
+        kafka.getSpec().getKafka().setStorage(persistentStorage);
+        checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
+
+        warnings = checker.run(false);
+        assertThat(warnings, hasSize(0));
+
+        // Check JBOD storage
+        JbodStorage jbodStorage = new JbodStorageBuilder()
+                .withVolumes(new PersistentClaimStorageBuilder()
+                                .withId(0)
+                                .withSize("100Gi")
+                                .build(),
+                        new PersistentClaimStorageBuilder()
+                                .withId(1)
+                                .withSize("100Gi")
+                                .build())
+                .build();
+        kafka.getSpec().getKafka().setStorage(jbodStorage);
+        checker = generateChecker(kafka, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE);
+
+        warnings = checker.run(false);
+        assertThat(warnings, hasSize(0));
     }
 }

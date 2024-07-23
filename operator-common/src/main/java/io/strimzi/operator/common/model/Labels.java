@@ -15,6 +15,7 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import static java.lang.Boolean.parseBoolean;
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.singletonMap;
 import static java.util.Collections.unmodifiableMap;
@@ -128,7 +129,7 @@ public class Labels extends ResourceLabels {
                     .keySet()
                     .stream()
                     .filter(key -> key.startsWith(Labels.STRIMZI_DOMAIN) && !key.startsWith(Labels.STRIMZI_CLUSTER_LABEL))
-                    .collect(Collectors.toList());
+                    .toList();
             if (invalidLabels.size() > 0) {
                 throw new IllegalArgumentException("Labels starting with " + STRIMZI_DOMAIN + " are not allowed in Custom Resources, such labels should be removed.");
             }
@@ -162,10 +163,10 @@ public class Labels extends ResourceLabels {
 
         if (additionalLabels != null) {
             additionalLabels = additionalLabels
-                    .entrySet()
-                    .stream()
-                    .filter(entryset -> !STRIMZI_LABELS_EXCLUSION_PATTERN.matcher(entryset.getKey()).matches())
-                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+                .entrySet()
+                .stream()
+                .filter(entryset -> !STRIMZI_LABELS_EXCLUSION_PATTERN.matcher(entryset.getKey()).matches())
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
         }
 
         return additionalLabels(additionalLabels);
@@ -277,7 +278,7 @@ public class Labels extends ResourceLabels {
      * This method is written to handle instance names which are valid resource names, since they are derived from a
      * custom resource. It does not modify arbitrary names as label values.
      *
-     * @param instance Theoriginal name of the instance
+     * @param instance The original name of the instance
      * @return Either the original instance name or a modified version to match label value criteria
      */
     /*test*/ static String getOrValidInstanceLabelValue(String instance) {
@@ -500,5 +501,29 @@ public class Labels extends ResourceLabels {
                 .withKubernetesInstance(customResourceName)
                 .withKubernetesPartOf(customResourceName)
                 .withKubernetesManagedBy(managedBy);
+    }
+
+    /*
+     * Static methods for working with Labels
+     */
+
+    /**
+     * Gets a boolean value of an label from a Kubernetes resource
+     *
+     * @param resource      Resource from which the label should be extracted
+     * @param label         Label key for which we want the value
+     * @param defaultValue  Default value if the label is not present or the resource doesn't exist / doesn't have labels
+     *
+     * @return  Boolean value form the labels or the default value
+     */
+    public static boolean booleanLabel(HasMetadata resource, String label, boolean defaultValue) {
+        if (resource != null
+                && resource.getMetadata() != null
+                && resource.getMetadata().getLabels() != null)  {
+            String value = resource.getMetadata().getLabels().get(label);
+            return value != null ? parseBoolean(value) : defaultValue;
+        } else {
+            return defaultValue;
+        }
     }
 }

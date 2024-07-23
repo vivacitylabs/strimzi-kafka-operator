@@ -6,31 +6,31 @@ package io.strimzi.systemtest.resources.jaeger;
 
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicy;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicyBuilder;
-import io.strimzi.systemtest.Constants;
-import io.strimzi.systemtest.Environment;
+import io.strimzi.systemtest.TestConstants;
+import io.strimzi.systemtest.resources.NamespaceManager;
 import io.strimzi.systemtest.resources.ResourceItem;
 import io.strimzi.systemtest.resources.ResourceManager;
-import io.strimzi.systemtest.utils.StUtils;
+import io.strimzi.systemtest.resources.kubernetes.NetworkPolicyResource;
 import io.strimzi.systemtest.utils.kubeUtils.controllers.DeploymentUtils;
 import io.strimzi.test.TestUtils;
-import io.strimzi.test.k8s.KubeClusterResource;
 import io.strimzi.test.logs.CollectorElement;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.junit.jupiter.api.extension.ExtensionContext;
 
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Map;
 import java.util.Stack;
 
-import static io.strimzi.systemtest.Constants.JAEGER_DEPLOYMENT_POLL;
-import static io.strimzi.systemtest.Constants.JAEGER_DEPLOYMENT_TIMEOUT;
+import static io.strimzi.systemtest.TestConstants.JAEGER_DEPLOYMENT_POLL;
+import static io.strimzi.systemtest.TestConstants.JAEGER_DEPLOYMENT_TIMEOUT;
 import static io.strimzi.systemtest.tracing.TracingConstants.CERT_MANAGER_CA_INJECTOR_DEPLOYMENT;
 import static io.strimzi.systemtest.tracing.TracingConstants.CERT_MANAGER_DEPLOYMENT;
 import static io.strimzi.systemtest.tracing.TracingConstants.CERT_MANAGER_NAMESPACE;
 import static io.strimzi.systemtest.tracing.TracingConstants.CERT_MANAGER_WEBHOOK_DEPLOYMENT;
 import static io.strimzi.systemtest.tracing.TracingConstants.JAEGER_INSTANCE_NAME;
+import static io.strimzi.systemtest.tracing.TracingConstants.JAEGER_NAMESPACE;
 import static io.strimzi.systemtest.tracing.TracingConstants.JAEGER_OPERATOR_DEPLOYMENT_NAME;
 import static io.strimzi.test.k8s.KubeClusterResource.cmdKubeClient;
 
@@ -45,21 +45,32 @@ public class SetupJaeger {
     private static final String CERT_MANAGER_PATH = TestUtils.USER_PATH + "/../systemtest/src/test/resources/tracing/cert-manager.yaml";
     private static final String JAEGER_INSTANCE_PATH = TestUtils.USER_PATH + "/../systemtest/src/test/resources/tracing/jaeger-instance.yaml";
     private static final String JAEGER_OPERATOR_PATH = TestUtils.USER_PATH + "/../systemtest/src/test/resources/tracing/jaeger-operator.yaml";
+    private static final String CERT_MANAGER = "cert-manager";
+    private static final String JAEGER = "jaeger";
 
     /**
      * Delete Jaeger instance
      */
     private static void deleteJaeger(String yamlContent) {
-        cmdKubeClient().namespace(Environment.TEST_SUITE_NAMESPACE).deleteContent(yamlContent);
+        cmdKubeClient().namespace(JAEGER_NAMESPACE).deleteContent(yamlContent);
     }
 
     /**
      * Encapsulates two methods for deploying Cert Manager and Jaeger operator
-     * @param extensionContext ExtensionContext of the suite
      */
-    public static void deployJaegerOperatorAndCertManager(ExtensionContext extensionContext) {
-        deployAndWaitForCertManager(extensionContext);
-        deployJaegerOperator(extensionContext);
+    public static void deployJaegerOperatorAndCertManager() {
+        deployAndWaitForCertManager();
+        allowNetworkPolicySettingsForCertManagerWebhook();
+        deployJaegerOperator();
+        allowNetworkPolicySettingsForJaegerOperator();
+    }
+
+    public static void allowNetworkPolicySettingsForJaegerOperator() {
+        NetworkPolicyResource.allowNetworkPolicySettingsForWebhook(JAEGER_NAMESPACE, JAEGER_OPERATOR_DEPLOYMENT_NAME, Map.of("name", JAEGER_OPERATOR_DEPLOYMENT_NAME));
+    }
+
+    public static void allowNetworkPolicySettingsForCertManagerWebhook() {
+        NetworkPolicyResource.allowNetworkPolicySettingsForWebhook(CERT_MANAGER_NAMESPACE, CERT_MANAGER, Map.of(TestConstants.APP_KUBERNETES_INSTANCE_LABEL, CERT_MANAGER));
     }
 
     /**
@@ -74,18 +85,16 @@ public class SetupJaeger {
 
     /**
      * Deploys Cert Manager and adds it to the stack of resources to be deleted on clean up
-     * @param extensionContext ExtensionContext of the suite
      */
-    private static void deployCertManager(ExtensionContext extensionContext) {
+    private static void deployCertManager() {
         // create namespace `cert-manager` and add it to stack, to collect logs from it
-        KubeClusterResource.getInstance().createNamespace(CollectorElement.createCollectorElement(extensionContext.getRequiredTestClass().getName()), CERT_MANAGER_NAMESPACE);
-        StUtils.copyImagePullSecrets(CERT_MANAGER_NAMESPACE);
+        NamespaceManager.getInstance().createNamespaceAndPrepare(CERT_MANAGER_NAMESPACE, CollectorElement.createCollectorElement(ResourceManager.getTestContext().getRequiredTestClass().getName()));
 
         LOGGER.info("Deploying CertManager from {}", CERT_MANAGER_PATH);
         // because we don't want to apply CertManager's file to specific namespace, passing the empty String will do the trick
         cmdKubeClient("").apply(CERT_MANAGER_PATH);
 
-        ResourceManager.STORED_RESOURCES.get(extensionContext.getDisplayName()).push(new ResourceItem<>(SetupJaeger::deleteCertManager));
+        ResourceManager.STORED_RESOURCES.get(ResourceManager.getTestContext().getDisplayName()).push(new ResourceItem<>(SetupJaeger::deleteCertManager));
     }
 
     /**
@@ -99,26 +108,24 @@ public class SetupJaeger {
 
     /**
      * Encapsulates two other methods - deployment of CertManager and wait for deployment (and all resources of CM) to be ready
-     * @param extensionContext ExtensionContext of the testcase
      */
-    private static void deployAndWaitForCertManager(final ExtensionContext extensionContext) {
-        deployCertManager(extensionContext);
+    private static void deployAndWaitForCertManager() {
+        deployCertManager();
         waitForCertManagerDeployment();
     }
 
     /**
      * Applies YAML file of Jaeger operator in a loop.
      * Loop is needed because of issue with Cert Manager, that can have problem injecting CA for Jaeger operator
-     * @param extensionContext ExtensionContext of the suite
      */
-    private static void deployJaegerContent(ExtensionContext extensionContext) {
-        TestUtils.waitFor("Jaeger deploy", JAEGER_DEPLOYMENT_POLL, JAEGER_DEPLOYMENT_TIMEOUT, () -> {
+    private static void deployJaegerContent() {
+        TestUtils.waitFor("Jaeger Operator deploy", JAEGER_DEPLOYMENT_POLL, JAEGER_DEPLOYMENT_TIMEOUT, () -> {
             try {
-                String jaegerOperator = Files.readString(Paths.get(JAEGER_OPERATOR_PATH)).replace("observability", Environment.TEST_SUITE_NAMESPACE);
+                String jaegerOperator = Files.readString(Paths.get(JAEGER_OPERATOR_PATH)).replace("observability", JAEGER_NAMESPACE);
 
                 LOGGER.info("Creating Jaeger Operator (and needed resources) from {}", JAEGER_OPERATOR_PATH);
-                cmdKubeClient(Environment.TEST_SUITE_NAMESPACE).applyContent(jaegerOperator);
-                ResourceManager.STORED_RESOURCES.get(extensionContext.getDisplayName()).push(new ResourceItem<>(() -> deleteJaeger(jaegerOperator)));
+                cmdKubeClient(JAEGER_NAMESPACE).applyContent(jaegerOperator);
+                ResourceManager.STORED_RESOURCES.get(ResourceManager.getTestContext().getDisplayName()).push(new ResourceItem<>(() -> deleteJaeger(jaegerOperator)));
 
                 return true;
             } catch (Exception e) {
@@ -126,24 +133,25 @@ public class SetupJaeger {
                 return false;
             }
         });
-        DeploymentUtils.waitForDeploymentAndPodsReady(Environment.TEST_SUITE_NAMESPACE, JAEGER_OPERATOR_DEPLOYMENT_NAME, 1);
+        DeploymentUtils.waitForDeploymentAndPodsReady(JAEGER_NAMESPACE, JAEGER_OPERATOR_DEPLOYMENT_NAME, 1);
     }
 
     /**
      * Deploys Jaeger operator and NetworkPolicy needed for its proper function, waits for readiness of NetworkPolicy
-     * @param extensionContext
      */
-    private static void deployJaegerOperator(final ExtensionContext extensionContext) {
+    private static void deployJaegerOperator() {
         LOGGER.info("=== Applying Jaeger Operator install files ===");
 
-        deployJaegerContent(extensionContext);
+        // create namespace `jaeger` and add it to stack, to collect logs from it
+        NamespaceManager.getInstance().createNamespaceAndPrepare(JAEGER_NAMESPACE, CollectorElement.createCollectorElement(ResourceManager.getTestContext().getRequiredTestClass().getName()));
+        deployJaegerContent();
 
         NetworkPolicy networkPolicy = new NetworkPolicyBuilder()
             .withApiVersion("networking.k8s.io/v1")
-            .withKind(Constants.NETWORK_POLICY)
+            .withKind(TestConstants.NETWORK_POLICY)
             .withNewMetadata()
                 .withName("jaeger-allow")
-                .withNamespace(Environment.TEST_SUITE_NAMESPACE)
+                .withNamespace(JAEGER_NAMESPACE)
             .endMetadata()
             .withNewSpec()
                 .addNewIngress()
@@ -156,22 +164,36 @@ public class SetupJaeger {
             .build();
 
         LOGGER.debug("Creating NetworkPolicy: {}", networkPolicy.toString());
-        ResourceManager.getInstance().createResourceWithWait(extensionContext, networkPolicy);
+        ResourceManager.getInstance().createResourceWithWait(networkPolicy);
         LOGGER.info("Network policy for jaeger successfully created");
     }
 
     /**
      * Install of Jaeger instance
      */
-    public static void deployJaegerInstance(final ExtensionContext extensionContext, String namespaceName) {
+    public static void deployJaegerInstance(String namespaceName) {
         LOGGER.info("=== Applying jaeger instance install file ===");
 
         String instanceYamlContent = TestUtils.getContent(new File(JAEGER_INSTANCE_PATH), TestUtils::toYamlString);
-        cmdKubeClient(namespaceName).applyContent(instanceYamlContent);
 
-        ResourceManager.STORED_RESOURCES.computeIfAbsent(extensionContext.getDisplayName(), k -> new Stack<>());
-        ResourceManager.STORED_RESOURCES.get(extensionContext.getDisplayName()).push(new ResourceItem<>(() -> cmdKubeClient(namespaceName).deleteContent(instanceYamlContent)));
+        TestUtils.waitFor("Jaeger Instance deploy", JAEGER_DEPLOYMENT_POLL, JAEGER_DEPLOYMENT_TIMEOUT, () -> {
+            try {
 
+                LOGGER.info("Creating Jaeger Instance from {}", JAEGER_OPERATOR_PATH);
+                cmdKubeClient(namespaceName).applyContent(instanceYamlContent);
+
+                return true;
+            } catch (Exception e) {
+                LOGGER.error("Following exception has been thrown during Jaeger Instance Deployment: {}", e.getMessage());
+                return false;
+            } finally {
+                ResourceManager.STORED_RESOURCES.computeIfAbsent(ResourceManager.getTestContext().getDisplayName(), k -> new Stack<>());
+                ResourceManager.STORED_RESOURCES.get(ResourceManager.getTestContext().getDisplayName()).push(new ResourceItem<>(() -> cmdKubeClient(namespaceName).deleteContent(instanceYamlContent)));
+            }
+        });
         DeploymentUtils.waitForDeploymentAndPodsReady(namespaceName, JAEGER_INSTANCE_NAME, 1);
+
+        NetworkPolicyResource.allowNetworkPolicyBetweenScraperPodAndMatchingLabel(namespaceName, JAEGER_INSTANCE_NAME + "-allow", Map.of(TestConstants.APP_POD_LABEL, JAEGER));
+        NetworkPolicyResource.allowNetworkPolicyAllIngressForMatchingLabel(namespaceName, JAEGER_INSTANCE_NAME + "-traces-allow", Map.of(TestConstants.APP_POD_LABEL, JAEGER));
     }
 }

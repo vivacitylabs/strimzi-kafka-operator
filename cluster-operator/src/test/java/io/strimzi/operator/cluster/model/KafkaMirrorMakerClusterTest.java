@@ -13,36 +13,36 @@ import io.fabric8.kubernetes.api.model.HostAlias;
 import io.fabric8.kubernetes.api.model.HostAliasBuilder;
 import io.fabric8.kubernetes.api.model.IntOrString;
 import io.fabric8.kubernetes.api.model.LocalObjectReference;
+import io.fabric8.kubernetes.api.model.PodSecurityContextBuilder;
 import io.fabric8.kubernetes.api.model.Probe;
 import io.fabric8.kubernetes.api.model.Quantity;
 import io.fabric8.kubernetes.api.model.ResourceRequirementsBuilder;
 import io.fabric8.kubernetes.api.model.ServiceAccount;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
-import io.fabric8.kubernetes.api.model.PodSecurityContextBuilder;
 import io.fabric8.kubernetes.api.model.policy.v1.PodDisruptionBudget;
-import io.strimzi.api.kafka.model.CertSecretSource;
-import io.strimzi.api.kafka.model.CertSecretSourceBuilder;
-import io.strimzi.api.kafka.model.ContainerEnvVar;
-import io.strimzi.api.kafka.model.JmxPrometheusExporterMetrics;
-import io.strimzi.api.kafka.model.JmxPrometheusExporterMetricsBuilder;
-import io.strimzi.api.kafka.model.JvmOptions;
-import io.strimzi.api.kafka.model.KafkaMirrorMaker;
-import io.strimzi.api.kafka.model.KafkaMirrorMakerBuilder;
-import io.strimzi.api.kafka.model.KafkaMirrorMakerConsumerSpec;
-import io.strimzi.api.kafka.model.KafkaMirrorMakerConsumerSpecBuilder;
-import io.strimzi.api.kafka.model.KafkaMirrorMakerProducerSpec;
-import io.strimzi.api.kafka.model.KafkaMirrorMakerProducerSpecBuilder;
-import io.strimzi.api.kafka.model.KafkaMirrorMakerResources;
-import io.strimzi.api.kafka.model.MetricsConfig;
-import io.strimzi.api.kafka.model.authentication.KafkaClientAuthenticationOAuthBuilder;
-import io.strimzi.api.kafka.model.authentication.KafkaClientAuthenticationTlsBuilder;
-import io.strimzi.api.kafka.model.template.ContainerTemplate;
-import io.strimzi.api.kafka.model.template.DeploymentStrategy;
-import io.strimzi.api.kafka.model.tracing.OpenTelemetryTracing;
+import io.strimzi.api.kafka.model.common.CertSecretSource;
+import io.strimzi.api.kafka.model.common.CertSecretSourceBuilder;
+import io.strimzi.api.kafka.model.common.ContainerEnvVar;
+import io.strimzi.api.kafka.model.common.JvmOptions;
+import io.strimzi.api.kafka.model.common.authentication.KafkaClientAuthenticationOAuthBuilder;
+import io.strimzi.api.kafka.model.common.authentication.KafkaClientAuthenticationTlsBuilder;
+import io.strimzi.api.kafka.model.common.metrics.JmxPrometheusExporterMetrics;
+import io.strimzi.api.kafka.model.common.metrics.JmxPrometheusExporterMetricsBuilder;
+import io.strimzi.api.kafka.model.common.metrics.MetricsConfig;
+import io.strimzi.api.kafka.model.common.template.ContainerTemplate;
+import io.strimzi.api.kafka.model.common.template.DeploymentStrategy;
+import io.strimzi.api.kafka.model.common.tracing.OpenTelemetryTracing;
+import io.strimzi.api.kafka.model.mirrormaker.KafkaMirrorMaker;
+import io.strimzi.api.kafka.model.mirrormaker.KafkaMirrorMakerBuilder;
+import io.strimzi.api.kafka.model.mirrormaker.KafkaMirrorMakerConsumerSpec;
+import io.strimzi.api.kafka.model.mirrormaker.KafkaMirrorMakerConsumerSpecBuilder;
+import io.strimzi.api.kafka.model.mirrormaker.KafkaMirrorMakerProducerSpec;
+import io.strimzi.api.kafka.model.mirrormaker.KafkaMirrorMakerProducerSpecBuilder;
+import io.strimzi.api.kafka.model.mirrormaker.KafkaMirrorMakerResources;
 import io.strimzi.kafka.oauth.client.ClientConfig;
 import io.strimzi.kafka.oauth.server.ServerConfig;
-import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
+import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
 import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.cluster.model.metrics.MetricsModel;
 import io.strimzi.operator.common.Reconciliation;
@@ -159,7 +159,7 @@ public class KafkaMirrorMakerClusterTest {
     }
 
     private Map<String, String> expectedLabels()    {
-        return expectedLabels(KafkaMirrorMakerResources.deploymentName(cluster));
+        return expectedLabels(KafkaMirrorMakerResources.componentName(cluster));
     }
 
     protected List<EnvVar> getExpectedEnvVars() {
@@ -258,7 +258,7 @@ public class KafkaMirrorMakerClusterTest {
     public void testGenerateDeployment()   {
         Deployment dep = mm.generateDeployment(new HashMap<>(), true, null, null);
 
-        assertThat(dep.getMetadata().getName(), is(KafkaMirrorMakerResources.deploymentName(cluster)));
+        assertThat(dep.getMetadata().getName(), is(KafkaMirrorMakerResources.componentName(cluster)));
         assertThat(dep.getMetadata().getNamespace(), is(namespace));
         Map<String, String> expectedLabels = expectedLabels();
         assertThat(dep.getMetadata().getLabels(), is(expectedLabels));
@@ -266,7 +266,7 @@ public class KafkaMirrorMakerClusterTest {
         assertThat(dep.getSpec().getReplicas(), is(replicas));
         assertThat(dep.getSpec().getTemplate().getMetadata().getLabels(), is(expectedLabels));
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getName(), is(KafkaMirrorMakerResources.deploymentName(this.cluster)));
+        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getName(), is(KafkaMirrorMakerResources.componentName(this.cluster)));
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getImage(), is(mm.image));
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getEnv(), is(getExpectedEnvVars()));
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getPorts().size(), is(1));
@@ -1173,7 +1173,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-            KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS, SHARED_ENV_PROVIDER);
+            KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS, SHARED_ENV_PROVIDER);
         });
     }
 
@@ -1195,7 +1195,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-            KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS, SHARED_ENV_PROVIDER);
+            KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS, SHARED_ENV_PROVIDER);
         });
     }
 
@@ -1245,22 +1245,20 @@ public class KafkaMirrorMakerClusterTest {
                 is(String.format("%s=\"%s\" %s=\"%s\" %s=\"%s\"", ClientConfig.OAUTH_CLIENT_ID, "my-client-id", ClientConfig.OAUTH_TOKEN_ENDPOINT_URI, "http://my-oauth-server", ServerConfig.OAUTH_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM, "")));
 
         // Volume mounts
-        assertThat(cont.getVolumeMounts().stream().filter(mount -> "consumer-oauth-certs-0".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_CONSUMER + "/first-certificate-0"));
-        assertThat(cont.getVolumeMounts().stream().filter(mount -> "consumer-oauth-certs-1".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_CONSUMER + "/second-certificate-1"));
-        assertThat(cont.getVolumeMounts().stream().filter(mount -> "consumer-oauth-certs-2".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_CONSUMER + "/first-certificate-2"));
+        assertThat(cont.getVolumeMounts().stream().filter(mount -> "consumer-oauth-certs-first-certificate".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_CONSUMER + "first-certificate"));
+        assertThat(cont.getVolumeMounts().stream().filter(mount -> "consumer-oauth-certs-second-certificate".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_CONSUMER + "second-certificate"));
+        assertThat(cont.getVolumeMounts().stream().filter(mount -> "producer-oauth-certs-third-certificate".equals(mount.getName())).findFirst().orElse(null), is(nullValue()));
+        assertThat(cont.getVolumeMounts().stream().filter(mount -> "producer-oauth-certs-fourth-certificate".equals(mount.getName())).findFirst().orElse(null), is(nullValue()));
 
         // Volumes
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-0".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-0".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getKey(), is("ca.crt"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-0".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getPath(), is("tls.crt"));
+        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-first-certificate".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().isEmpty(), is(true));
+        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-second-certificate".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().isEmpty(), is(true));
+        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-third-certificate".equals(vol.getName())).findFirst().orElse(null), is(nullValue()));
+        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-fourth-certificate".equals(vol.getName())).findFirst().orElse(null), is(nullValue()));
 
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-1".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-1".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getKey(), is("tls.crt"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-1".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getPath(), is("tls.crt"));
-
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-2".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-2".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getKey(), is("ca2.crt"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-2".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getPath(), is("tls.crt"));
+        // Environment variable
+        assertThat(cont.getEnv().stream().filter(e -> "KAFKA_MIRRORMAKER_OAUTH_TRUSTED_CERTS_CONSUMER".equals(e.getName())).findFirst().orElseThrow().getValue(), is("first-certificate/ca.crt;second-certificate/tls.crt;first-certificate/ca2.crt"));
+        assertThat(cont.getEnv().stream().filter(e -> "KAFKA_MIRRORMAKER_OAUTH_TRUSTED_CERTS_PRODUCER".equals(e.getName())).findFirst().orElse(null), is(nullValue()));
     }
 
     @ParallelTest
@@ -1376,8 +1374,6 @@ public class KafkaMirrorMakerClusterTest {
                 emptyMap(), true, null, null);
         Container cont = dep.getSpec().getTemplate().getSpec().getContainers().get(0);
 
-        System.out.println("*** testGenerateDeploymentWithProducerOAuthWithUsernameAndPassword ***\n" + cont.getEnv());
-
         assertThat(cont.getEnv().stream().filter(var -> KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_SASL_MECHANISM_PRODUCER.equals(var.getName())).findFirst().orElseThrow().getValue(), is("oauth"));
         assertThat(cont.getEnv().stream().filter(var -> KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_OAUTH_PASSWORD_GRANT_PASSWORD_PRODUCER.equals(var.getName())).findFirst().orElseThrow().getValueFrom().getSecretKeyRef().getName(), is("my-password-secret"));
         assertThat(cont.getEnv().stream().filter(var -> KafkaMirrorMakerCluster.ENV_VAR_KAFKA_MIRRORMAKER_OAUTH_PASSWORD_GRANT_PASSWORD_PRODUCER.equals(var.getName())).findFirst().orElseThrow().getValueFrom().getSecretKeyRef().getKey(), is("user1.password"));
@@ -1402,7 +1398,7 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-            KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS, SHARED_ENV_PROVIDER);
+            KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS, SHARED_ENV_PROVIDER);
         });
     }
 
@@ -1424,24 +1420,24 @@ public class KafkaMirrorMakerClusterTest {
                 .endSpec()
                 .build();
 
-            KafkaMirrorMakerCluster kc = KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS, SHARED_ENV_PROVIDER);
+            KafkaMirrorMakerCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, resource, VERSIONS, SHARED_ENV_PROVIDER);
         });
     }
 
     @ParallelTest
     public void testGenerateDeploymentWithProducerOAuthWithTls() {
-        CertSecretSource cert1 = new CertSecretSourceBuilder()
-                .withSecretName("first-certificate")
+        CertSecretSource cert4 = new CertSecretSourceBuilder()
+                .withSecretName("third-certificate")
                 .withCertificate("ca.crt")
                 .build();
 
-        CertSecretSource cert2 = new CertSecretSourceBuilder()
-                .withSecretName("second-certificate")
+        CertSecretSource cert5 = new CertSecretSourceBuilder()
+                .withSecretName("fourth-certificate")
                 .withCertificate("tls.crt")
                 .build();
 
-        CertSecretSource cert3 = new CertSecretSourceBuilder()
-                .withSecretName("first-certificate")
+        CertSecretSource cert6 = new CertSecretSourceBuilder()
+                .withSecretName("fourth-certificate")
                 .withCertificate("ca2.crt")
                 .build();
 
@@ -1457,7 +1453,7 @@ public class KafkaMirrorMakerClusterTest {
                                             .withKey("my-secret-key")
                                         .endClientSecret()
                                         .withDisableTlsHostnameVerification(true)
-                                        .withTlsTrustedCertificates(cert1, cert2, cert3)
+                                        .withTlsTrustedCertificates(cert4, cert5, cert6)
                                         .build())
                     .endProducer()
                 .endSpec()
@@ -1474,22 +1470,20 @@ public class KafkaMirrorMakerClusterTest {
                 is(String.format("%s=\"%s\" %s=\"%s\" %s=\"%s\"", ClientConfig.OAUTH_CLIENT_ID, "my-client-id", ClientConfig.OAUTH_TOKEN_ENDPOINT_URI, "http://my-oauth-server", ServerConfig.OAUTH_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM, "")));
 
         // Volume mounts
-        assertThat(cont.getVolumeMounts().stream().filter(mount -> "producer-oauth-certs-0".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_PRODUCER + "/first-certificate-0"));
-        assertThat(cont.getVolumeMounts().stream().filter(mount -> "producer-oauth-certs-1".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_PRODUCER + "/second-certificate-1"));
-        assertThat(cont.getVolumeMounts().stream().filter(mount -> "producer-oauth-certs-2".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_PRODUCER + "/first-certificate-2"));
+        assertThat(cont.getVolumeMounts().stream().filter(mount -> "consumer-oauth-certs-first-certificate".equals(mount.getName())).findFirst().orElse(null), is(nullValue()));
+        assertThat(cont.getVolumeMounts().stream().filter(mount -> "consumer-oauth-certs-second-certificate".equals(mount.getName())).findFirst().orElse(null), is(nullValue()));
+        assertThat(cont.getVolumeMounts().stream().filter(mount -> "producer-oauth-certs-third-certificate".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_PRODUCER + "third-certificate"));
+        assertThat(cont.getVolumeMounts().stream().filter(mount -> "producer-oauth-certs-fourth-certificate".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_PRODUCER + "fourth-certificate"));
 
         // Volumes
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-0".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-0".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getKey(), is("ca.crt"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-0".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getPath(), is("tls.crt"));
+        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-first-certificate".equals(vol.getName())).findFirst().orElse(null), is(nullValue()));
+        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-second-certificate".equals(vol.getName())).findFirst().orElse(null), is(nullValue()));
+        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-third-certificate".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().isEmpty(), is(true));
+        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-fourth-certificate".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().isEmpty(), is(true));
 
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-1".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-1".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getKey(), is("tls.crt"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-1".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getPath(), is("tls.crt"));
-
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-2".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-2".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getKey(), is("ca2.crt"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-2".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getPath(), is("tls.crt"));
+        // Environment variable
+        assertThat(cont.getEnv().stream().filter(e -> "KAFKA_MIRRORMAKER_OAUTH_TRUSTED_CERTS_CONSUMER".equals(e.getName())).findFirst().orElse(null), is(nullValue()));
+        assertThat(cont.getEnv().stream().filter(e -> "KAFKA_MIRRORMAKER_OAUTH_TRUSTED_CERTS_PRODUCER".equals(e.getName())).findFirst().orElseThrow().getValue(), is("third-certificate/ca.crt;fourth-certificate/tls.crt;fourth-certificate/ca2.crt"));
     }
 
     @ParallelTest
@@ -1506,6 +1500,21 @@ public class KafkaMirrorMakerClusterTest {
 
         CertSecretSource cert3 = new CertSecretSourceBuilder()
                 .withSecretName("first-certificate")
+                .withCertificate("ca2.crt")
+                .build();
+
+        CertSecretSource cert4 = new CertSecretSourceBuilder()
+                .withSecretName("third-certificate")
+                .withCertificate("ca.crt")
+                .build();
+
+        CertSecretSource cert5 = new CertSecretSourceBuilder()
+                .withSecretName("fourth-certificate")
+                .withCertificate("tls.crt")
+                .build();
+
+        CertSecretSource cert6 = new CertSecretSourceBuilder()
+                .withSecretName("fourth-certificate")
                 .withCertificate("ca2.crt")
                 .build();
 
@@ -1534,7 +1543,7 @@ public class KafkaMirrorMakerClusterTest {
                                             .withKey("my-secret-key")
                                         .endClientSecret()
                                         .withDisableTlsHostnameVerification(true)
-                                        .withTlsTrustedCertificates(cert1, cert2, cert3)
+                                        .withTlsTrustedCertificates(cert4, cert5, cert6)
                                         .build())
                     .endProducer()
                 .endSpec()
@@ -1556,38 +1565,20 @@ public class KafkaMirrorMakerClusterTest {
                 is(String.format("%s=\"%s\" %s=\"%s\" %s=\"%s\"", ClientConfig.OAUTH_CLIENT_ID, "my-client-id", ClientConfig.OAUTH_TOKEN_ENDPOINT_URI, "http://my-oauth-server", ServerConfig.OAUTH_SSL_ENDPOINT_IDENTIFICATION_ALGORITHM, "")));
 
         // Volume mounts
-        assertThat(cont.getVolumeMounts().stream().filter(mount -> "producer-oauth-certs-0".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_PRODUCER + "/first-certificate-0"));
-        assertThat(cont.getVolumeMounts().stream().filter(mount -> "producer-oauth-certs-1".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_PRODUCER + "/second-certificate-1"));
-        assertThat(cont.getVolumeMounts().stream().filter(mount -> "producer-oauth-certs-2".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_PRODUCER + "/first-certificate-2"));
-        assertThat(cont.getVolumeMounts().stream().filter(mount -> "consumer-oauth-certs-0".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_CONSUMER + "/first-certificate-0"));
-        assertThat(cont.getVolumeMounts().stream().filter(mount -> "consumer-oauth-certs-1".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_CONSUMER + "/second-certificate-1"));
-        assertThat(cont.getVolumeMounts().stream().filter(mount -> "consumer-oauth-certs-2".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_CONSUMER + "/first-certificate-2"));
-
+        assertThat(cont.getVolumeMounts().stream().filter(mount -> "consumer-oauth-certs-first-certificate".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_CONSUMER + "first-certificate"));
+        assertThat(cont.getVolumeMounts().stream().filter(mount -> "consumer-oauth-certs-second-certificate".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_CONSUMER + "second-certificate"));
+        assertThat(cont.getVolumeMounts().stream().filter(mount -> "producer-oauth-certs-third-certificate".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_PRODUCER + "third-certificate"));
+        assertThat(cont.getVolumeMounts().stream().filter(mount -> "producer-oauth-certs-fourth-certificate".equals(mount.getName())).findFirst().orElseThrow().getMountPath(), is(KafkaMirrorMakerCluster.OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT_PRODUCER + "fourth-certificate"));
 
         // Volumes
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-0".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-0".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getKey(), is("ca.crt"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-0".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getPath(), is("tls.crt"));
+        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-first-certificate".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().isEmpty(), is(true));
+        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-second-certificate".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().isEmpty(), is(true));
+        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-third-certificate".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().isEmpty(), is(true));
+        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-fourth-certificate".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().isEmpty(), is(true));
 
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-1".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-1".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getKey(), is("tls.crt"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-1".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getPath(), is("tls.crt"));
-
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-2".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-2".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getKey(), is("ca2.crt"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "producer-oauth-certs-2".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getPath(), is("tls.crt"));
-
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-0".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-0".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getKey(), is("ca.crt"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-0".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getPath(), is("tls.crt"));
-
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-1".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-1".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getKey(), is("tls.crt"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-1".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getPath(), is("tls.crt"));
-
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-2".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().size(), is(1));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-2".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getKey(), is("ca2.crt"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getVolumes().stream().filter(vol -> "consumer-oauth-certs-2".equals(vol.getName())).findFirst().orElseThrow().getSecret().getItems().get(0).getPath(), is("tls.crt"));
+        // Environment variable
+        assertThat(cont.getEnv().stream().filter(e -> "KAFKA_MIRRORMAKER_OAUTH_TRUSTED_CERTS_CONSUMER".equals(e.getName())).findFirst().orElseThrow().getValue(), is("first-certificate/ca.crt;second-certificate/tls.crt;first-certificate/ca2.crt"));
+        assertThat(cont.getEnv().stream().filter(e -> "KAFKA_MIRRORMAKER_OAUTH_TRUSTED_CERTS_PRODUCER".equals(e.getName())).findFirst().orElseThrow().getValue(), is("third-certificate/ca.crt;fourth-certificate/tls.crt;fourth-certificate/ca2.crt"));
     }
 
     @ParallelTest

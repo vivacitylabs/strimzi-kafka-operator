@@ -9,7 +9,6 @@ rules:
   - "kafka.strimzi.io"
   resources:
   - kafkatopics
-  - kafkatopics/status
   verbs:
   - get
   - list
@@ -19,8 +18,10 @@ rules:
   - update
   - delete
 - apiGroups:
-  - ""
+  - "kafka.strimzi.io"
   resources:
-  - events
+  - kafkatopics/status
   verbs:
-  - create
+  - get
+  - patch
+  - update

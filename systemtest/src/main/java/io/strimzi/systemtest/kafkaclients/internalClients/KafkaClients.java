@@ -10,9 +10,10 @@ import io.fabric8.kubernetes.api.model.LocalObjectReference;
 import io.fabric8.kubernetes.api.model.PodSpecBuilder;
 import io.fabric8.kubernetes.api.model.batch.v1.Job;
 import io.fabric8.kubernetes.api.model.batch.v1.JobBuilder;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.systemtest.Constants;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.operator.common.Util;
 import io.strimzi.systemtest.Environment;
+import io.strimzi.systemtest.TestConstants;
 import io.strimzi.systemtest.enums.PodSecurityProfile;
 import io.strimzi.systemtest.resources.ResourceManager;
 import io.strimzi.systemtest.utils.ClientUtils;
@@ -21,9 +22,7 @@ import org.apache.kafka.common.security.auth.SecurityProtocol;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-import java.nio.charset.StandardCharsets;
 import java.security.InvalidParameterException;
-import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -84,6 +83,12 @@ public class KafkaClients extends BaseClients {
 
     public String getConsumerGroup() {
         return consumerGroup;
+    }
+
+    public void generateNewConsumerGroup() {
+        final String newConsumerGroup = ClientUtils.generateRandomConsumerGroup();
+        LOGGER.info("Regenerating new consumer group {} for clients {} {}", newConsumerGroup, this.getProducerName(), this.getConsumerName());
+        this.setConsumerGroup(newConsumerGroup);
     }
 
     public void setConsumerGroup(String consumerGroup) {
@@ -182,7 +187,7 @@ public class KafkaClients extends BaseClients {
 
         Map<String, String> producerLabels = new HashMap<>();
         producerLabels.put("app", producerName);
-        producerLabels.put(Constants.KAFKA_CLIENTS_LABEL_KEY, Constants.KAFKA_CLIENTS_LABEL_VALUE);
+        producerLabels.put(TestConstants.KAFKA_CLIENTS_LABEL_KEY, TestConstants.KAFKA_CLIENTS_LABEL_VALUE);
 
         PodSpecBuilder podSpecBuilder = new PodSpecBuilder();
 
@@ -210,7 +215,7 @@ public class KafkaClients extends BaseClients {
                         .withContainers()
                             .addNewContainer()
                                 .withName(producerName)
-                                .withImagePullPolicy(Constants.IF_NOT_PRESENT_IMAGE_PULL_POLICY)
+                                .withImagePullPolicy(TestConstants.IF_NOT_PRESENT_IMAGE_PULL_POLICY)
                                 .withImage(Environment.TEST_CLIENTS_IMAGE)
                                 .addNewEnv()
                                     .withName("BOOTSTRAP_SERVERS")
@@ -329,7 +334,7 @@ public class KafkaClients extends BaseClients {
 
         Map<String, String> consumerLabels = new HashMap<>();
         consumerLabels.put("app", consumerName);
-        consumerLabels.put(Constants.KAFKA_CLIENTS_LABEL_KEY, Constants.KAFKA_CLIENTS_LABEL_VALUE);
+        consumerLabels.put(TestConstants.KAFKA_CLIENTS_LABEL_KEY, TestConstants.KAFKA_CLIENTS_LABEL_VALUE);
 
         PodSpecBuilder podSpecBuilder = new PodSpecBuilder();
 
@@ -357,7 +362,7 @@ public class KafkaClients extends BaseClients {
                             .withContainers()
                                 .addNewContainer()
                                     .withName(consumerName)
-                                    .withImagePullPolicy(Constants.IF_NOT_PRESENT_IMAGE_PULL_POLICY)
+                                    .withImagePullPolicy(TestConstants.IF_NOT_PRESENT_IMAGE_PULL_POLICY)
                                     .withImage(Environment.TEST_CLIENTS_IMAGE)
                                     .addNewEnv()
                                         .withName("BOOTSTRAP_SERVERS")
@@ -423,7 +428,7 @@ public class KafkaClients extends BaseClients {
         }
 
         final String saslJaasConfigEncrypted = ResourceManager.kubeClient().getSecret(this.getNamespaceName(), this.getUsername()).getData().get("sasl.jaas.config");
-        final String saslJaasConfigDecrypted = new String(Base64.getDecoder().decode(saslJaasConfigEncrypted), StandardCharsets.US_ASCII);
+        final String saslJaasConfigDecrypted = Util.decodeFromBase64(saslJaasConfigEncrypted);
 
         this.setAdditionalConfig(this.getAdditionalConfig() +
             // scram-sha

@@ -12,25 +12,27 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import com.jayway.jsonpath.JsonPath;
 import io.fabric8.kubernetes.api.model.Affinity;
 import io.fabric8.kubernetes.api.model.ConfigMap;
+import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.LabelSelector;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.SecretBuilder;
-import io.strimzi.api.kafka.model.ContainerEnvVar;
-import io.strimzi.api.kafka.model.ContainerEnvVarBuilder;
-import io.strimzi.systemtest.Constants;
+import io.strimzi.api.kafka.model.common.ContainerEnvVar;
+import io.strimzi.api.kafka.model.common.ContainerEnvVarBuilder;
 import io.strimzi.systemtest.Environment;
+import io.strimzi.systemtest.TestConstants;
+import io.strimzi.systemtest.annotations.SkipDefaultNetworkPolicyCreation;
 import io.strimzi.systemtest.resources.crd.KafkaResource;
-import io.strimzi.systemtest.utils.kubeUtils.controllers.DeploymentUtils;
+import io.strimzi.systemtest.resources.crd.StrimziPodSetResource;
 import io.strimzi.systemtest.utils.kubeUtils.controllers.StrimziPodSetUtils;
 import io.strimzi.test.TestUtils;
 import io.strimzi.test.k8s.KubeClusterResource;
 import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.apache.logging.log4j.Level;
 import org.junit.jupiter.api.ClassDescriptor;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
@@ -44,6 +46,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
@@ -227,7 +230,7 @@ public class StUtils {
     public static JsonArray expectedServiceDiscoveryInfo(int port, String protocol, String auth, boolean tls) {
         JsonObject jsonObject = new JsonObject();
         jsonObject.put("port", port);
-        jsonObject.put(Constants.TLS_LISTENER_DEFAULT_NAME, tls);
+        jsonObject.put(TestConstants.TLS_LISTENER_DEFAULT_NAME, tls);
         jsonObject.put("protocol", protocol);
         jsonObject.put("auth", auth);
 
@@ -262,7 +265,7 @@ public class StUtils {
         //this is only for decrease the number of records - kafka have record/line, operators record/11lines
         String tail = "--tail=" + (containerName.contains("operator") ? "100" : "10");
 
-        TestUtils.waitFor("JSON log to be present in " + pods, Constants.GLOBAL_POLL_INTERVAL_MEDIUM, Constants.GLOBAL_TIMEOUT, () -> {
+        TestUtils.waitFor("JSON log to be present in " + pods, TestConstants.GLOBAL_POLL_INTERVAL_MEDIUM, TestConstants.GLOBAL_TIMEOUT, () -> {
             boolean isJSON = false;
             for (String podName : pods.keySet()) {
                 String log = cmdKubeClient().namespace(namespaceName).execInCurrentNamespace(Level.TRACE, "logs", podName, "-c", containerName, tail).out();
@@ -313,7 +316,7 @@ public class StUtils {
      * @param exceptedString log message to be checked
      */
     public static void waitUntilLogFromPodContainsString(String namespaceName, String podName, String containerName, String timeSince, String exceptedString) {
-        TestUtils.waitFor("log from Pod: " + namespaceName + "/" + podName + " to contain string: " + exceptedString, Constants.GLOBAL_POLL_INTERVAL, Constants.GLOBAL_TIMEOUT,
+        TestUtils.waitFor("log from Pod: " + namespaceName + "/" + podName + " to contain string: " + exceptedString, TestConstants.GLOBAL_POLL_INTERVAL, TestConstants.GLOBAL_TIMEOUT,
             () -> getLogFromPodByTime(namespaceName, podName, containerName, timeSince).contains(exceptedString));
     }
 
@@ -378,7 +381,7 @@ public class StUtils {
      * otherwise false
      */
     public static boolean isParallelTest(Object annotationHolder) {
-        return CONTAINS_ANNOTATION.apply(Constants.PARALLEL_TEST, annotationHolder);
+        return CONTAINS_ANNOTATION.apply(TestConstants.PARALLEL_TEST, annotationHolder);
     }
 
     /**
@@ -388,7 +391,7 @@ public class StUtils {
      * otherwise false
      */
     public static boolean isIsolatedTest(Object annotationHolder) {
-        return CONTAINS_ANNOTATION.apply(Constants.ISOLATED_TEST, annotationHolder);
+        return CONTAINS_ANNOTATION.apply(TestConstants.ISOLATED_TEST, annotationHolder);
     }
 
     /**
@@ -398,7 +401,17 @@ public class StUtils {
      * otherwise false
      */
     public static boolean isParallelNamespaceTest(Object annotationHolder) {
-        return CONTAINS_ANNOTATION.apply(Constants.PARALLEL_NAMESPACE, annotationHolder);
+        return CONTAINS_ANNOTATION.apply(TestConstants.PARALLEL_NAMESPACE, annotationHolder);
+    }
+
+    /**
+     * Checking if test case contains annotation {@link io.strimzi.systemtest.annotations.SkipDefaultNetworkPolicyCreation}
+     * @param annotationHolder context of the test case
+     * @return true if test case contains annotation {@link io.strimzi.systemtest.annotations.SkipDefaultNetworkPolicyCreation},
+     * otherwise false
+     */
+    public static boolean shouldSkipNetworkPoliciesCreation(Object annotationHolder) {
+        return CONTAINS_ANNOTATION.apply(SkipDefaultNetworkPolicyCreation.class.getName().toLowerCase(Locale.ROOT), annotationHolder);
     }
 
     /**
@@ -408,7 +421,7 @@ public class StUtils {
      * @return single or parallel namespace based on cluster configuration
      */
     public static String getNamespaceBasedOnRbac(String namespace, ExtensionContext extensionContext) {
-        return Environment.isNamespaceRbacScope() ? namespace : extensionContext.getStore(ExtensionContext.Namespace.GLOBAL).get(Constants.NAMESPACE_KEY).toString();
+        return Environment.isNamespaceRbacScope() ? namespace : extensionContext.getStore(ExtensionContext.Namespace.GLOBAL).get(TestConstants.NAMESPACE_KEY).toString();
     }
 
     /**
@@ -512,50 +525,58 @@ public class StUtils {
     }
 
     public static Affinity getDeploymentOrStrimziPodSetAffinity(String namespaceName, String resourceName) {
-        if (Environment.isStableConnectIdentitiesEnabled()) {
-            Pod firstPod = StrimziPodSetUtils.getFirstPodFromSpec(namespaceName, resourceName);
-            return firstPod.getSpec().getAffinity();
-        } else {
-            return kubeClient().getDeployment(namespaceName, resourceName).getSpec().getTemplate().getSpec().getAffinity();
-        }
+        Pod firstPod = StrimziPodSetUtils.getFirstPodFromSpec(namespaceName, resourceName);
+        return firstPod.getSpec().getAffinity();
     }
 
     public static void waitTillStrimziPodSetOrDeploymentRolled(final String namespaceName, final String depName,
                                                                final int expectPods, final Map<String, String> snapShot,
                                                                final LabelSelector labelSelector) {
-        if (Environment.isStableConnectIdentitiesEnabled()) {
-            RollingUpdateUtils.waitTillComponentHasRolled(namespaceName, labelSelector, snapShot);
-            RollingUpdateUtils.waitForComponentAndPodsReady(namespaceName, labelSelector, expectPods);
-        } else {
-            DeploymentUtils.waitTillDepHasRolled(namespaceName, depName, expectPods, snapShot);
-        }
+        RollingUpdateUtils.waitTillComponentHasRolled(namespaceName, labelSelector, snapShot);
+        RollingUpdateUtils.waitForComponentAndPodsReady(namespaceName, labelSelector, expectPods);
     }
 
     /**
      * Returns a list of names of ConfigMaps with broker configuration files.
      * For StrimziPodSets, it should be a ConfigMap per broker.
      *
+     * @param namespaceName  Name of the Namespace where is the Kafka cluster running
      * @param kafkaClusterName  Name of the Kafka cluster
-     * @param replicas          Number of Kafka replicas
      *
      * @return                  List with ConfigMaps containing the configuration
      */
-    public static List<String> getKafkaConfigurationConfigMaps(String kafkaClusterName, int replicas)    {
-        List<String> cmNames = new ArrayList<>(replicas);
+    public static List<String> getKafkaConfigurationConfigMaps(String namespaceName, String kafkaClusterName) {
+        return kubeClient().listPodNames(namespaceName, KafkaResource.getLabelSelector(kafkaClusterName, StrimziPodSetResource.getBrokerComponentName(kafkaClusterName)));
+    }
 
-        for (int i = 0; i < replicas; i++)  {
-            cmNames.add(KafkaResource.getKafkaPodName(kafkaClusterName, i));
+    public static void waitUntilSuppliersAreMatching(final Supplier<?> sup, final Supplier<?> anotherSup) {
+        TestUtils.waitFor(sup.get() + " is matching with" + anotherSup.get(), TestConstants.GLOBAL_POLL_INTERVAL,
+                TestConstants.GLOBAL_STATUS_TIMEOUT, () -> sup.get().equals(anotherSup.get()));
+    }
+
+    public static void waitUntilSupplierIsSatisfied(String message, final BooleanSupplier sup) {
+        TestUtils.waitFor(message, TestConstants.GLOBAL_POLL_INTERVAL,
+                TestConstants.GLOBAL_STATUS_TIMEOUT, sup);
+    }
+
+    /**
+     * Checks env variables of Topic operator container (inside EO Pod) and based on that determines, if BTO or UTO is used.
+     *
+     * @param namespaceName name of the Namespace, where the EO Pod is running
+     * @param eoLabelSelector LabelSelector of EO
+     * @return boolean determining if UTO is used or not
+     */
+    public static boolean isUnidirectionalTopicOperatorUsed(String namespaceName, LabelSelector eoLabelSelector) {
+        Optional<Container> topicOperatorContainer = kubeClient().listPods(namespaceName, eoLabelSelector).get(0).getSpec().getContainers()
+            .stream().filter(container -> container.getName().equals("topic-operator")).findFirst();
+
+        if (topicOperatorContainer.isPresent()) {
+            return topicOperatorContainer.get().getEnv()
+                // ZK related env vars are only present in BTO mode -> because of that we can determine which of the TOs is used
+                .stream().noneMatch(envVar -> envVar.getName().contains("ZOOKEEPER"));
         }
 
-        return cmNames;
-    }
-    public static void waitUntilSuppliersAreMatching(final Supplier<?> sup, final Supplier<?> anotherSup) {
-        TestUtils.waitFor(sup.get() + " is matching with" + anotherSup.get(), Constants.GLOBAL_POLL_INTERVAL,
-                Constants.GLOBAL_STATUS_TIMEOUT, () -> sup.get().equals(anotherSup.get()));
-    }
-
-    public static void waitUntilSupplierIsSatisfied(final BooleanSupplier sup) {
-        TestUtils.waitFor(sup.getAsBoolean() + " is satisfied", Constants.GLOBAL_POLL_INTERVAL,
-                Constants.GLOBAL_STATUS_TIMEOUT, sup);
+        LOGGER.warn("Cannot determine if UTO is used or not, because the EO Pod doesn't exist, gonna assume that it's not");
+        return false;
     }
 }

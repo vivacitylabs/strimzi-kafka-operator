@@ -4,8 +4,8 @@
  */
 package io.strimzi.operator.cluster.model.logging;
 
-import io.strimzi.api.kafka.model.InlineLoggingBuilder;
-import io.strimzi.api.kafka.model.KafkaConnectSpecBuilder;
+import io.strimzi.api.kafka.model.common.InlineLoggingBuilder;
+import io.strimzi.api.kafka.model.connect.KafkaConnectSpecBuilder;
 import io.strimzi.operator.common.Reconciliation;
 import org.junit.jupiter.api.Test;
 
@@ -37,8 +37,6 @@ public class LoggingModelTest {
                 log4j.appender.CONSOLE.layout.ConversionPattern=%d{ISO8601} %p %X{connector.context}%m (%c) [%t]%n
                 connect.root.logger.level=INFO
                 log4j.rootLogger=${connect.root.logger.level}, CONSOLE
-                log4j.logger.org.apache.zookeeper=ERROR
-                log4j.logger.org.I0Itec.zkclient=ERROR
                 log4j.logger.org.reflections=DEBUG
                 logger.myclass.level=TRACE
                 """));
@@ -64,8 +62,6 @@ public class LoggingModelTest {
                 log4j.appender.CONSOLE.layout.ConversionPattern=%d{ISO8601} %p %X{connector.context}%m (%c) [%t]%n
                 connect.root.logger.level=INFO
                 log4j.rootLogger=${connect.root.logger.level}, CONSOLE
-                log4j.logger.org.apache.zookeeper=ERROR
-                log4j.logger.org.I0Itec.zkclient=ERROR
                 log4j.logger.org.reflections=ERROR
                                 
                 monitorInterval=30

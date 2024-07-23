@@ -4,31 +4,6 @@
  */
 package io.strimzi.crdgenerator;
 
-import java.io.File;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStreamWriter;
-import java.io.Writer;
-import java.lang.annotation.Annotation;
-import java.lang.reflect.AnnotatedElement;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.lang.reflect.ParameterizedType;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.util.Arrays;
-import java.util.Base64;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.TreeMap;
-import java.util.function.Function;
-import java.util.stream.Collectors;
-
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
@@ -41,6 +16,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.TextNode;
 import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
 import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
+import io.fabric8.kubernetes.api.model.Quantity;
 import io.fabric8.kubernetes.client.CustomResource;
 import io.strimzi.api.annotations.ApiVersion;
 import io.strimzi.api.annotations.KubeVersion;
@@ -54,6 +30,31 @@ import io.strimzi.crdgenerator.annotations.MinimumItems;
 import io.strimzi.crdgenerator.annotations.OneOf;
 import io.strimzi.crdgenerator.annotations.Pattern;
 import io.strimzi.crdgenerator.annotations.Type;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
+import java.lang.annotation.Annotation;
+import java.lang.reflect.AnnotatedElement;
+import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import static io.strimzi.api.annotations.ApiVersion.V1;
 import static io.strimzi.crdgenerator.Property.hasAnyGetterAndAnySetter;
@@ -584,7 +585,11 @@ class CrdGenerator {
     }
 
     private void buildObjectSchema(ApiVersion crApiVersion, ObjectNode result, Class<?> crdClass, boolean printType, boolean description) {
-        checkClass(crdClass);
+        if (!crdClass.getName().startsWith("java.lang.")) {
+            // java.lang.* class does not require class validation as i.e. JsonIgnore and Builder does not apply
+            checkClass(crdClass);
+        }
+
         if (printType) {
             result.put("type", "object");
         }
@@ -595,7 +600,7 @@ class CrdGenerator {
             result.set("oneOf", oneOf);
         }
         ArrayNode required = buildSchemaRequired(crApiVersion, crdClass);
-        if (required.size() > 0) {
+        if (!required.isEmpty()) {
             result.set("required", required);
         }
     }
@@ -625,32 +630,44 @@ class CrdGenerator {
     }
 
     private void checkClass(Class<?> crdClass) {
+        checkJsonInclude(crdClass);
+        checkJsonPropertyOrder(crdClass);
+
+        if (!isAbstract(crdClass.getModifiers())) {
+            checkForBuilderClass(crdClass, crdClass.getName() + "Builder");
+            checkForBuilderClass(crdClass, crdClass.getName() + "Fluent");
+
+            checkClassOverrides(crdClass, "hashCode");
+            hasAnyGetterAndAnySetter(crdClass);
+        } else {
+            for (Class<?> c : subtypes(crdClass)) {
+                hasAnyGetterAndAnySetter(c);
+                checkDiscriminatorIsIncluded(crdClass, c);
+                checkJsonPropertyOrder(c);
+            }
+        }
+
+        if (crdClass.getName().startsWith("io.strimzi.api.")) {
+            checkInherits(crdClass, "io.strimzi.api.kafka.model.common.UnknownPropertyPreserving");
+        }
+
+        checkClassOverrides(crdClass, "equals", Object.class);
+    }
+
+    private void checkJsonInclude(Class<?> crdClass) {
         if (!crdClass.isAnnotationPresent(JsonInclude.class)) {
             err(crdClass + " is missing @JsonInclude");
         } else if (!crdClass.getAnnotation(JsonInclude.class).value().equals(JsonInclude.Include.NON_NULL)
                 && !crdClass.getAnnotation(JsonInclude.class).value().equals(JsonInclude.Include.NON_DEFAULT)) {
             err(crdClass + " has a @JsonInclude value other than Include.NON_NULL");
         }
-        if (!isAbstract(crdClass.getModifiers())) {
-            checkForBuilderClass(crdClass, crdClass.getName() + "Builder");
-            checkForBuilderClass(crdClass, crdClass.getName() + "Fluent");
+    }
+
+    private void checkJsonPropertyOrder(Class<?> crdClass) {
+        if (!isAbstract(crdClass.getModifiers())
+                && !crdClass.isAnnotationPresent(JsonPropertyOrder.class)) {
+            err(crdClass + " is missing @JsonPropertyOrder");
         }
-        if (!Modifier.isAbstract(crdClass.getModifiers())) {
-            hasAnyGetterAndAnySetter(crdClass);
-        } else {
-            for (Class c : subtypes(crdClass)) {
-                hasAnyGetterAndAnySetter(c);
-                checkDiscriminatorIsIncluded(crdClass, c);
-            }
-        }
-        checkInherits(crdClass, "java.io.Serializable");
-        if (crdClass.getName().startsWith("io.strimzi.api.")) {
-            checkInherits(crdClass, "io.strimzi.api.kafka.model.UnknownPropertyPreserving");
-        }
-        if (!Modifier.isAbstract(crdClass.getModifiers())) {
-            checkClassOverrides(crdClass, "hashCode");
-        }
-        checkClassOverrides(crdClass, "equals", Object.class);
     }
 
     private void checkDiscriminatorIsIncluded(Class<?> crdClass, Class c) {
@@ -715,13 +732,37 @@ class CrdGenerator {
     }
 
     private Collection<Property> unionOfSubclassProperties(ApiVersion crApiVersion, Class<?> crdClass) {
-        TreeMap<String, Property> result = new TreeMap<>();
-        for (Class subtype : Property.subtypes(crdClass)) {
-            result.putAll(properties(crApiVersion, subtype));
-        }
-        result.putAll(properties(crApiVersion, crdClass));
         JsonPropertyOrder order = crdClass.getAnnotation(JsonPropertyOrder.class);
+
+        TreeMap<String, Property> result = new TreeMap<>();
+        for (Class<?> subtype : Property.subtypes(crdClass)) {
+            Map<String, Property> properties = properties(crApiVersion, subtype);
+            checkPropertiesInJsonPropertyOrder(subtype, properties.keySet());
+            result.putAll(properties);
+        }
+
+        Map<String, Property> properties = properties(crApiVersion, crdClass);
+        checkPropertiesInJsonPropertyOrder(crdClass, properties.keySet());
+        result.putAll(properties);
+
         return sortedProperties(order != null ? order.value() : null, result).values();
+    }
+
+    private void checkPropertiesInJsonPropertyOrder(Class<?> crdClass, Set<String> properties) {
+        if (!isAbstract(crdClass.getModifiers())) {
+            JsonPropertyOrder order = crdClass.getAnnotation(JsonPropertyOrder.class);
+            if (order == null) {
+                // Skip as the error is already tracked in checkClass
+                return;
+            }
+
+            List<String> expectedOrder = asList(order.value());
+            for (String property : properties) {
+                if (!expectedOrder.contains(property)) {
+                    err(crdClass + " has a property " + property + " which is not in the @JsonPropertyOrder");
+                }
+            }
+        }
     }
 
     private ArrayNode buildSchemaRequired(ApiVersion crApiVersion, Class<?> crdClass) {
@@ -739,10 +780,33 @@ class CrdGenerator {
 
     private ObjectNode buildSchemaProperties(ApiVersion crApiVersion, Class<?> crdClass, boolean description) {
         ObjectNode properties = nf.objectNode();
+
+        buildKindApiVersionAndMetadata(properties, crdClass);
+
         for (Property property : unionOfSubclassProperties(crApiVersion, crdClass)) {
             buildProperty(crApiVersion, properties, property, description);
         }
         return properties;
+    }
+
+    private void buildKindApiVersionAndMetadata(ObjectNode properties, Class<?> crdClass)   {
+        if (crdClass.isAnnotationPresent(Crd.class))    {
+            // Add metadata to the CRD class root
+            ObjectNode apiVersion = properties.putObject("apiVersion");
+            apiVersion.put("type", "string");
+            apiVersion.put("description", "APIVersion defines the versioned schema of this representation of an object. " +
+                    "Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. " +
+                    "More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources");
+
+            ObjectNode kind = properties.putObject("kind");
+            kind.put("type", "string");
+            kind.put("description", "Kind is a string value representing the REST resource this object " +
+                    "represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. " +
+                    "In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds");
+
+            ObjectNode metadata = properties.putObject("metadata");
+            metadata.put("type", "object");
+        }
     }
 
     private void buildProperty(ApiVersion crdApiVersion, ObjectNode properties, Property property, boolean description) {
@@ -760,6 +824,10 @@ class CrdGenerator {
             schema = nf.objectNode();
             schema.put("type", "object");
             schema.putObject("patternProperties").set("-?[0-9]+", buildArraySchema(crApiVersion, property, new PropertyType(null, ((ParameterizedType) propertyType.getGenericType()).getActualTypeArguments()[1]), description));
+        } else if (propertyType.getGenericType() instanceof ParameterizedType
+                && ((ParameterizedType) propertyType.getGenericType()).getRawType().equals(Map.class)
+                && isMapOfTypes(propertyType, String.class, Quantity.class)) {
+            schema = buildQuantityTypeSchema();
         } else if (Schema.isJsonScalarType(returnType)
                 || Map.class.equals(returnType)) {            
             schema = addSimpleTypeConstraints(crApiVersion, buildBasicTypeSchema(property, returnType), property);
@@ -798,7 +866,12 @@ class CrdGenerator {
                 || long.class.equals(elementType)) {
             itemResult.put("type", "integer");
         } else if (Map.class.equals(elementType)) {
-            preserveUnknownFields(itemResult);
+            if (isMapOfTypes(propertyType, String.class, String.class)) {
+                preserveUnknownStringFields(itemResult);
+            } else {
+                preserveUnknownFields(itemResult);
+            }
+
             itemResult.put("type", "object");
         } else if (elementType.isEnum()) {
             itemResult.put("type", "string");
@@ -815,7 +888,19 @@ class CrdGenerator {
         return result;
     }
 
-    private ObjectNode buildBasicTypeSchema(AnnotatedElement element, Class type) {
+    /**
+     * Utility method to check if Map key-value pair match specific types.
+     * @param propertyType property to check
+     * @param keyType key Class
+     * @param valueType value Class
+     * @return true if key-value types are equal to specified types, false otherwise.
+     */
+    private boolean isMapOfTypes(PropertyType propertyType, Class<?> keyType, Class<?> valueType) {
+        java.lang.reflect.Type[] types = ((ParameterizedType) propertyType.getGenericType()).getActualTypeArguments();
+        return keyType.equals(types[0]) && valueType.equals(types[1]);
+    }
+
+    private ObjectNode buildBasicTypeSchema(Property element, Class type) {
         ObjectNode result = nf.objectNode();
 
         String typeName;
@@ -823,7 +908,11 @@ class CrdGenerator {
         if (typeAnno == null) {
             typeName = typeName(type);
             if (Map.class.equals(type)) {
-                preserveUnknownFields(result);
+                if (isMapOfTypes(element.getType(), String.class, String.class)) {
+                    preserveUnknownStringFields(result);
+                } else {
+                    preserveUnknownFields(result);
+                }
             }
         } else {
             typeName = typeAnno.value();
@@ -833,9 +922,32 @@ class CrdGenerator {
         return result;
     }
 
+    private ObjectNode buildQuantityTypeSchema() {
+        ObjectNode result = nf.objectNode();
+
+        if (crdApiVersion.compareTo(V1) < 0)
+            return result;
+
+        ObjectNode additionalProperties = result.putObject("additionalProperties");
+        ArrayNode anyOf = additionalProperties.putArray("anyOf");
+        anyOf.addObject().put("type", "integer");
+        anyOf.addObject().put("type", "string");
+        additionalProperties.put("pattern", "^(\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))))?$");
+        additionalProperties.put("x-kubernetes-int-or-string", true);
+        result.put("type", "object");
+        return result;
+    }
+
     private void preserveUnknownFields(ObjectNode result)    {
         if (crdApiVersion.compareTo(V1) >= 0) {
             result.put("x-kubernetes-preserve-unknown-fields", true);
+        }
+    }
+
+    private void preserveUnknownStringFields(ObjectNode result)    {
+        if (crdApiVersion.compareTo(V1) >= 0) {
+            ObjectNode additionalProperties = result.putObject("additionalProperties");
+            additionalProperties.put("type", "string");
         }
     }
 

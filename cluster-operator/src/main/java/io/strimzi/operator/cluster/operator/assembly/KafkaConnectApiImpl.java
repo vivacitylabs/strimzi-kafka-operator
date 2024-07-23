@@ -5,21 +5,6 @@
 
 package io.strimzi.operator.cluster.operator.assembly;
 
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.function.Function;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
-
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.strimzi.api.kafka.model.connect.ConnectorPlugin;
@@ -39,6 +24,21 @@ import io.vertx.core.http.HttpMethod;
 import io.vertx.core.json.DecodeException;
 import io.vertx.core.json.JsonArray;
 import io.vertx.core.json.JsonObject;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import static java.util.Arrays.asList;
 
@@ -390,7 +390,7 @@ class KafkaConnectApiImpl implements KafkaConnectApi {
     }
 
     private Future<Void> updateConnectorLogger(Reconciliation reconciliation, String host, int port, String logger, String level) {
-        String path = "/admin/loggers/" + logger;
+        String path = "/admin/loggers/" + logger + "?scope=cluster";
         JsonObject levelJO = new JsonObject();
         levelJO.put("level", level);
         LOGGER.debugCr(reconciliation, "Making PUT request to {} with body {}", path, levelJO);
@@ -405,7 +405,7 @@ class KafkaConnectApiImpl implements KafkaConnectApi {
                                     .write(buffer.toString());
                             request.result().send(response -> {
                                 if (response.succeeded()) {
-                                    if (response.result().statusCode() == 200) {
+                                    if (List.of(200, 204).contains(response.result().statusCode())) {
                                         response.result().bodyHandler(body -> {
                                             LOGGER.debugCr(reconciliation, "Logger {} updated to level {}", logger, level);
                                             result.complete();
@@ -442,13 +442,10 @@ class KafkaConnectApiImpl implements KafkaConnectApi {
                                             LOGGER.debugCr(reconciliation, "Got {} response to GET request to {}", response.result().statusCode(), path);
                                             Map<String, Map<String, String>> fetchedLoggers = mapper.readValue(buffer.getBytes(), MAP_OF_MAP_OF_STRINGS);
                                             Map<String, String> loggerMap = new HashMap<>(fetchedLoggers.size());
-                                            for (var e : fetchedLoggers.entrySet()) {
-                                                String level = e.getValue().get("level");
-                                                if (level != null && e.getValue().size() == 1) {
-                                                    loggerMap.put(e.getKey(), level);
-                                                } else {
-                                                    result.tryFail("Inner map has unexpected keys " + e.getValue().keySet());
-                                                    break;
+                                            for (var loggerEntry : fetchedLoggers.entrySet()) {
+                                                String level = loggerEntry.getValue().get("level");
+                                                if (level != null) {
+                                                    loggerMap.put(loggerEntry.getKey(), level);
                                                 }
                                             }
                                             result.tryComplete(loggerMap);

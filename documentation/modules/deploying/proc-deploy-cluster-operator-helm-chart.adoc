@@ -12,7 +12,7 @@ Strimzi provides a Helm chart to deploy the Cluster Operator.
 After you have deployed the Cluster Operator this way, you can deploy Strimzi components using custom resources.
 For example, you can deploy the `Kafka` custom resource, and the installed Cluster Operator will create a Kafka cluster.
 
-For information on upgrades, see xref:assembly-upgrade-cluster-operator-{context}[Cluster Operator upgrade options].
+For information on upgrades, see xref:assembly-upgrade-{context}[].
 
 .Prerequisites
 
@@ -40,4 +40,4 @@ helm install strimzi-cluster-operator --set replicas=2 --version 0.35.0 oci://qu
 [source,shell]
 helm ls
 
-. xref:deploying-kafka-cluster-{context}[Deploy Kafka] and other Kafka components using custom resources.
+. xref:deploy-tasks_str[Deploy Kafka and other Kafka components] using custom resources.

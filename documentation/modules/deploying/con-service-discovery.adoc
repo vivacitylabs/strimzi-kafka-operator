@@ -1,0 +1,78 @@
+// Module included in the following assemblies:
+//
+// managing/assembly-management-tasks.adoc
+
+[id='proc-add-service-discovery-{context}']
+= Discovering connection details for clients
+
+[role="_abstract"]
+Service discovery makes it easier for client applications running in the same Kubernetes cluster as Strimzi to interact with a Kafka cluster.
+
+A service discovery label and annotation are created for the following services:
+
+* Internal Kafka bootstrap service
+* Kafka Bridge service
+
+Service discovery label:: The service discovery label, `strimzi.io/discovery`, is set to `true` for `Service` resources to make them discoverable for client connections.
+Service discovery annotation:: The service discovery annotation provides connection details in JSON format for each service for client applications to use to establish connections.
+
+.Example internal Kafka bootstrap service
+[source,yaml,subs="attributes+"]
+----
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    strimzi.io/discovery: |-
+      [ {
+        "port" : 9092,
+        "tls" : false,
+        "protocol" : "kafka",
+        "auth" : "scram-sha-512"
+      }, {
+        "port" : 9093,
+        "tls" : true,
+        "protocol" : "kafka",
+        "auth" : "tls"
+      } ]
+  labels:
+    strimzi.io/cluster: my-cluster
+    strimzi.io/discovery: "true"
+    strimzi.io/kind: Kafka
+    strimzi.io/name: my-cluster-kafka-bootstrap
+  name: my-cluster-kafka-bootstrap
+spec:
+  #...
+----
+
+.Example Kafka Bridge service
+
+[source,yaml,subs="attributes+"]
+----
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    strimzi.io/discovery: |-
+      [ {
+        "port" : 8080,
+        "tls" : false,
+        "auth" : "none",
+        "protocol" : "http"
+      } ]
+  labels:
+    strimzi.io/cluster: my-bridge
+    strimzi.io/discovery: "true"
+    strimzi.io/kind: KafkaBridge
+    strimzi.io/name: my-bridge-bridge-service
+----
+
+Find services by specifying the discovery label when fetching services from the command line or a corresponding API call.
+
+.Returning services using the discovery label
+[source,yaml]
+----
+kubectl get service -l strimzi.io/discovery=true
+----
+
+Connection details are returned when retrieving the service discovery label.

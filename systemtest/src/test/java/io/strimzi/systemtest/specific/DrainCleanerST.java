@@ -4,130 +4,121 @@
  */
 package io.strimzi.systemtest.specific;
 
-import io.strimzi.api.kafka.model.KafkaResources;
+import io.fabric8.kubernetes.client.KubernetesClientException;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
 import io.strimzi.systemtest.AbstractST;
-import io.strimzi.systemtest.Constants;
 import io.strimzi.systemtest.Environment;
+import io.strimzi.systemtest.TestConstants;
 import io.strimzi.systemtest.annotations.IsolatedTest;
-import io.strimzi.systemtest.annotations.RequiredMinKubeApiVersion;
+import io.strimzi.systemtest.annotations.MicroShiftNotSupported;
 import io.strimzi.systemtest.kafkaclients.internalClients.KafkaClients;
-import io.strimzi.systemtest.kafkaclients.internalClients.KafkaClientsBuilder;
-import io.strimzi.systemtest.resources.crd.KafkaResource;
+import io.strimzi.systemtest.resources.NodePoolsConverter;
+import io.strimzi.systemtest.resources.ResourceManager;
 import io.strimzi.systemtest.resources.draincleaner.SetupDrainCleaner;
+import io.strimzi.systemtest.resources.kubernetes.NetworkPolicyResource;
 import io.strimzi.systemtest.resources.operator.SetupClusterOperator;
 import io.strimzi.systemtest.storage.TestStorage;
+import io.strimzi.systemtest.templates.crd.KafkaNodePoolTemplates;
 import io.strimzi.systemtest.templates.crd.KafkaTemplates;
 import io.strimzi.systemtest.templates.crd.KafkaTopicTemplates;
 import io.strimzi.systemtest.utils.ClientUtils;
 import io.strimzi.systemtest.utils.RollingUpdateUtils;
-import io.strimzi.systemtest.utils.kubeUtils.objects.NodeUtils;
 import io.strimzi.systemtest.utils.kubeUtils.objects.PodUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.extension.ExtensionContext;
 
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import static io.strimzi.systemtest.Constants.ACCEPTANCE;
-import static io.strimzi.systemtest.Constants.REGRESSION;
+import static io.strimzi.systemtest.TestConstants.REGRESSION;
 import static io.strimzi.systemtest.resources.ResourceManager.kubeClient;
 
 @Tag(REGRESSION)
+@MicroShiftNotSupported
 public class DrainCleanerST extends AbstractST {
 
     private static final Logger LOGGER = LogManager.getLogger(DrainCleanerST.class);
     private static SetupDrainCleaner drainCleaner = new SetupDrainCleaner();
 
-    @Tag(ACCEPTANCE)
+    @Tag(REGRESSION)
     @IsolatedTest
-    @RequiredMinKubeApiVersion(version = 1.17)
-    void testDrainCleanerWithComponents(ExtensionContext extensionContext) {
-        TestStorage testStorage = new TestStorage(extensionContext, Constants.DRAIN_CLEANER_NAMESPACE);
+    void testDrainCleanerWithComponents() {
+        final TestStorage testStorage = new TestStorage(ResourceManager.getTestContext(), TestConstants.DRAIN_CLEANER_NAMESPACE);
 
         final int replicas = 3;
 
-        resourceManager.createResourceWithWait(extensionContext, KafkaTemplates.kafkaPersistent(testStorage.getClusterName(), replicas)
+        resourceManager.createResourceWithWait(
+            NodePoolsConverter.convertNodePoolsIfNeeded(
+                KafkaNodePoolTemplates.brokerPoolPersistentStorage(testStorage.getNamespaceName(), testStorage.getBrokerPoolName(), testStorage.getClusterName(), replicas).build(),
+                KafkaNodePoolTemplates.controllerPoolPersistentStorage(testStorage.getNamespaceName(), testStorage.getControllerPoolName(), testStorage.getClusterName(), replicas).build()
+            )
+        );
+        resourceManager.createResourceWithWait(KafkaTemplates.kafkaPersistent(testStorage.getClusterName(), replicas)
             .editMetadata()
-                .withNamespace(Constants.DRAIN_CLEANER_NAMESPACE)
+                .withNamespace(TestConstants.DRAIN_CLEANER_NAMESPACE)
             .endMetadata()
-            .editSpec()
-                .editKafka()
-                    .editOrNewTemplate()
-                        .editOrNewPodDisruptionBudget()
-                            .withMaxUnavailable(0)
-                        .endPodDisruptionBudget()
-                    .endTemplate()
-                .endKafka()
-                .editZookeeper()
-                    .editOrNewTemplate()
-                        .editOrNewPodDisruptionBudget()
-                            .withMaxUnavailable(0)
-                        .endPodDisruptionBudget()
-                    .endTemplate()
-                .endZookeeper()
-            .endSpec()
             .build());
 
-        resourceManager.createResourceWithWait(extensionContext, KafkaTopicTemplates.topic(testStorage.getClusterName(), testStorage.getTopicName(), Constants.DRAIN_CLEANER_NAMESPACE).build());
-        drainCleaner.createDrainCleaner(extensionContext);
+        resourceManager.createResourceWithWait(KafkaTopicTemplates.topic(testStorage.getClusterName(), testStorage.getTopicName(), TestConstants.DRAIN_CLEANER_NAMESPACE).build());
 
-        KafkaClients kafkaBasicExampleClients = new KafkaClientsBuilder()
-            .withMessageCount(300)
-            .withTopicName(testStorage.getTopicName())
-            .withNamespaceName(Constants.DRAIN_CLEANER_NAMESPACE)
-            .withBootstrapAddress(KafkaResources.plainBootstrapAddress(testStorage.getClusterName()))
-            .withProducerName(testStorage.getProducerName())
-            .withConsumerName(testStorage.getConsumerName())
-            .withDelayMs(1000)
+        drainCleaner.createDrainCleaner();
+        // allow NetworkPolicies for the webhook in case that we have "default to deny all" mode enabled
+        NetworkPolicyResource.allowNetworkPolicySettingsForWebhook(TestConstants.DRAIN_CLEANER_NAMESPACE, TestConstants.DRAIN_CLEANER_DEPLOYMENT_NAME, Map.of(TestConstants.APP_POD_LABEL, TestConstants.DRAIN_CLEANER_DEPLOYMENT_NAME));
+
+        final KafkaClients continuousClients = ClientUtils.getContinuousPlainClientBuilder(testStorage)
+            .withNamespaceName(TestConstants.DRAIN_CLEANER_NAMESPACE)
             .build();
 
-        resourceManager.createResourceWithWait(extensionContext,
-            kafkaBasicExampleClients.producerStrimzi(),
-            kafkaBasicExampleClients.consumerStrimzi());
+        resourceManager.createResourceWithWait(
+            continuousClients.producerStrimzi(),
+            continuousClients.consumerStrimzi());
 
-        for (int i = 0; i < replicas; i++) {
-            String zkPodName = KafkaResources.zookeeperPodName(testStorage.getClusterName(), i);
-            String kafkaPodName = KafkaResource.getKafkaPodName(testStorage.getClusterName(), i);
+        List<String> brokerPods = kubeClient().listPodNames(TestConstants.DRAIN_CLEANER_NAMESPACE, testStorage.getBrokerSelector());
 
-            Map<String, String> zkPod = null;
-            if (!Environment.isKRaftModeEnabled()) {
-                zkPod = PodUtils.podSnapshot(Constants.DRAIN_CLEANER_NAMESPACE, testStorage.getZookeeperSelector()).entrySet()
-                        .stream().filter(snapshot -> snapshot.getKey().equals(zkPodName)).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-            }
-            Map<String, String> kafkaPod = PodUtils.podSnapshot(Constants.DRAIN_CLEANER_NAMESPACE, testStorage.getKafkaSelector()).entrySet()
-                .stream().filter(snapshot -> snapshot.getKey().equals(kafkaPodName)).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        if (!Environment.isKRaftModeEnabled()) {
+            String zkPodName = KafkaResources.zookeeperPodName(testStorage.getClusterName(), 0);
 
-            if (!Environment.isKRaftModeEnabled()) {
-                LOGGER.info("Evicting Pods: {}", zkPodName);
-                kubeClient().getClient().pods().inNamespace(Constants.DRAIN_CLEANER_NAMESPACE).withName(zkPodName).evict();
-            }
-            LOGGER.info("Evicting Pods: {}", kafkaPodName);
-            kubeClient().getClient().pods().inNamespace(Constants.DRAIN_CLEANER_NAMESPACE).withName(kafkaPodName).evict();
+            Map<String, String> zkPod = PodUtils.podSnapshot(TestConstants.DRAIN_CLEANER_NAMESPACE, testStorage.getControllerSelector()).entrySet()
+                    .stream().filter(snapshot -> snapshot.getKey().equals(zkPodName)).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
-            if (!Environment.isKRaftModeEnabled()) {
-                RollingUpdateUtils.waitTillComponentHasRolledAndPodsReady(Constants.DRAIN_CLEANER_NAMESPACE, testStorage.getZookeeperSelector(), replicas, zkPod);
-            }
-            RollingUpdateUtils.waitTillComponentHasRolledAndPodsReady(Constants.DRAIN_CLEANER_NAMESPACE, testStorage.getKafkaSelector(), replicas, kafkaPod);
+            evictPodWithName(zkPodName);
+            RollingUpdateUtils.waitTillComponentHasRolledAndPodsReady(TestConstants.DRAIN_CLEANER_NAMESPACE, testStorage.getControllerSelector(), replicas, zkPod);
         }
 
-        ClientUtils.waitForClientsSuccess(testStorage.getProducerName(), testStorage.getConsumerName(), Constants.DRAIN_CLEANER_NAMESPACE, 300);
+        String kafkaPodName = brokerPods.get(0);
+
+        Map<String, String> kafkaPod = PodUtils.podSnapshot(TestConstants.DRAIN_CLEANER_NAMESPACE, testStorage.getBrokerSelector()).entrySet()
+            .stream().filter(snapshot -> snapshot.getKey().equals(kafkaPodName)).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+        evictPodWithName(kafkaPodName);
+        RollingUpdateUtils.waitTillComponentHasRolledAndPodsReady(TestConstants.DRAIN_CLEANER_NAMESPACE, testStorage.getBrokerSelector(), replicas, kafkaPod);
+
+        ClientUtils.waitForClientsSuccess(testStorage.getContinuousProducerName(), testStorage.getContinuousConsumerName(), TestConstants.DRAIN_CLEANER_NAMESPACE, 200);
     }
 
-    @AfterEach
-    void teardown() {
-        kubeClient().getClusterNodes().forEach(node -> NodeUtils.cordonNode(node.getMetadata().getName(), true));
+    private void evictPodWithName(String podName) {
+        LOGGER.info("Evicting Pod: {}", podName);
+
+        try {
+            kubeClient().getClient().pods().inNamespace(TestConstants.DRAIN_CLEANER_NAMESPACE).withName(podName).evict();
+        } catch (KubernetesClientException e)   {
+            if (e.getCode() == 500 && e.getMessage().contains("The pod will be rolled by the Strimzi Cluster Operator"))    {
+                LOGGER.info("Eviction request for pod {} was denied by the Drain Cleaner", podName);
+            } else {
+                throw e;
+            }
+        }
     }
 
     @BeforeAll
-    void setup(ExtensionContext extensionContext) {
+    void setup() {
         clusterOperator = new SetupClusterOperator.SetupClusterOperatorBuilder()
-            .withExtensionContext(extensionContext)
-            .withNamespace(Constants.DRAIN_CLEANER_NAMESPACE)
-            .withOperationTimeout(Constants.CO_OPERATION_TIMEOUT_DEFAULT)
+            .withExtensionContext(ResourceManager.getTestContext())
+            .withNamespace(TestConstants.DRAIN_CLEANER_NAMESPACE)
+            .withOperationTimeout(TestConstants.CO_OPERATION_TIMEOUT_DEFAULT)
             .createInstallation()
             .runInstallation();
     }

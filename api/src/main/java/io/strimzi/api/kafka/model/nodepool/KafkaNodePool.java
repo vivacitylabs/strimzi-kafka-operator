@@ -6,20 +6,19 @@ package io.strimzi.api.kafka.model.nodepool;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
 import io.fabric8.kubernetes.api.model.Namespaced;
 import io.fabric8.kubernetes.client.CustomResource;
 import io.fabric8.kubernetes.model.annotation.Group;
 import io.fabric8.kubernetes.model.annotation.Version;
-import io.strimzi.api.kafka.model.Constants;
-import io.strimzi.api.kafka.model.UnknownPropertyPreserving;
+import io.strimzi.api.kafka.model.common.Constants;
+import io.strimzi.api.kafka.model.common.UnknownPropertyPreserving;
 import io.strimzi.crdgenerator.annotations.Crd;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.sundr.builder.annotations.Buildable;
 import io.sundr.builder.annotations.BuildableReference;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 import java.util.HashMap;
 import java.util.List;
@@ -55,7 +54,17 @@ import java.util.Map;
                                 name = "Desired replicas",
                                 description = "The desired number of replicas",
                                 jsonPath = ".spec.replicas",
-                                type = "integer")
+                                type = "integer"),
+                    @Crd.Spec.AdditionalPrinterColumn(
+                                name = "Roles",
+                                description = "Roles of the nodes in the pool",
+                                jsonPath = ".status.roles",
+                                type = "string"),
+                    @Crd.Spec.AdditionalPrinterColumn(
+                        name = "NodeIds",
+                        description = "Node IDs used by Kafka nodes in this pool",
+                        jsonPath = ".status.nodeIds",
+                        type = "string")
                 }
         )
 )
@@ -67,6 +76,7 @@ import java.util.Map;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonPropertyOrder({"apiVersion", "kind", "metadata", "spec", "status"})
 @EqualsAndHashCode(callSuper = true)
+@ToString(callSuper = true)
 @Version(Constants.V1BETA2)
 @Group(Constants.RESOURCE_GROUP_NAME)
 public class KafkaNodePool extends CustomResource<KafkaNodePoolSpec, KafkaNodePoolStatus> implements Namespaced, UnknownPropertyPreserving {
@@ -86,7 +96,7 @@ public class KafkaNodePool extends CustomResource<KafkaNodePoolSpec, KafkaNodePo
     public static final String STATUS_REPLICAS_PATH = ".status.replicas";
     public static final String LABEL_SELECTOR_PATH = ".status.labelSelector";
 
-    private final Map<String, Object> additionalProperties = new HashMap<>(0);
+    private Map<String, Object> additionalProperties;
 
     // Added to avoid duplication during Json serialization
     private String apiVersion;
@@ -116,21 +126,14 @@ public class KafkaNodePool extends CustomResource<KafkaNodePoolSpec, KafkaNodePo
 
     @Override
     public Map<String, Object> getAdditionalProperties() {
-        return this.additionalProperties;
+        return this.additionalProperties != null ? this.additionalProperties : Map.of();
     }
 
     @Override
     public void setAdditionalProperty(String name, Object value) {
-        this.additionalProperties.put(name, value);
-    }
-
-    @Override
-    public String toString() {
-        YAMLMapper mapper = new YAMLMapper();
-        try {
-            return mapper.writeValueAsString(this);
-        } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
+        if (this.additionalProperties == null) {
+            this.additionalProperties = new HashMap<>(2);
         }
+        this.additionalProperties.put(name, value);
     }
 }

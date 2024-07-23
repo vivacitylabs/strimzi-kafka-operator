@@ -8,6 +8,7 @@ import io.fabric8.kubernetes.api.model.ContainerBuilder;
 import io.fabric8.kubernetes.api.model.DeletionPropagation;
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.LabelSelector;
+import io.fabric8.kubernetes.api.model.NamespaceBuilder;
 import io.fabric8.kubernetes.api.model.OwnerReference;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodBuilder;
@@ -17,26 +18,26 @@ import io.fabric8.kubernetes.client.dsl.MixedOperation;
 import io.fabric8.kubernetes.client.dsl.Resource;
 import io.fabric8.kubernetes.client.dsl.base.PatchContext;
 import io.fabric8.kubernetes.client.dsl.base.PatchType;
-import io.strimzi.api.kafka.KafkaConnectList;
-import io.strimzi.api.kafka.KafkaList;
-import io.strimzi.api.kafka.KafkaMirrorMaker2List;
-import io.strimzi.api.kafka.StrimziPodSetList;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBuilder;
-import io.strimzi.api.kafka.model.KafkaConnect;
-import io.strimzi.api.kafka.model.KafkaMirrorMaker2;
-import io.strimzi.api.kafka.model.StrimziPodSet;
-import io.strimzi.api.kafka.model.StrimziPodSetBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
+import io.strimzi.api.kafka.model.connect.KafkaConnect;
+import io.strimzi.api.kafka.model.connect.KafkaConnectList;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
+import io.strimzi.api.kafka.model.kafka.KafkaList;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
+import io.strimzi.api.kafka.model.mirrormaker2.KafkaMirrorMaker2;
+import io.strimzi.api.kafka.model.mirrormaker2.KafkaMirrorMaker2List;
+import io.strimzi.api.kafka.model.podset.StrimziPodSet;
+import io.strimzi.api.kafka.model.podset.StrimziPodSetBuilder;
+import io.strimzi.api.kafka.model.podset.StrimziPodSetList;
 import io.strimzi.operator.cluster.ResourceUtils;
-import io.strimzi.operator.cluster.model.PodSetUtils;
 import io.strimzi.operator.cluster.model.PodRevision;
-import io.strimzi.operator.common.operator.resource.StrimziPodSetOperator;
+import io.strimzi.operator.cluster.model.PodSetUtils;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.CrdOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.PodOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.StrimziPodSetOperator;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.Labels;
-import io.strimzi.operator.common.operator.resource.CrdOperator;
-import io.strimzi.operator.common.operator.resource.PodOperator;
 import io.strimzi.test.TestUtils;
 import io.strimzi.test.k8s.KubeClusterResource;
 import io.strimzi.test.k8s.cluster.KubeCluster;
@@ -53,14 +54,16 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 import static io.strimzi.test.k8s.KubeClusterResource.cmdKubeClient;
 import static io.strimzi.test.k8s.KubeClusterResource.kubeClient;
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
-import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 @ExtendWith(VertxExtension.class)
 public class StrimziPodSetControllerIT {
@@ -91,15 +94,17 @@ public class StrimziPodSetControllerIT {
 
         assertDoesNotThrow(KubeCluster::bootstrap, "Could not bootstrap server");
 
-        if (cluster.getNamespace() != null && System.getenv("SKIP_TEARDOWN") == null) {
+        client = new KubernetesClientBuilder().build();
+
+        if (client.namespaces().withName(NAMESPACE).get() != null && System.getenv("SKIP_TEARDOWN") == null) {
             LOGGER.warn("Namespace {} is already created, going to delete it", NAMESPACE);
-            kubeClient().deleteNamespace(NAMESPACE);
-            cmdKubeClient().waitForResourceDeletion("Namespace", NAMESPACE);
+            client.namespaces().withName(NAMESPACE).withPropagationPolicy(DeletionPropagation.BACKGROUND).delete();
+            client.namespaces().withName(NAMESPACE).waitUntilCondition(Objects::isNull, 30_000, TimeUnit.MILLISECONDS);
         }
 
         LOGGER.info("Creating namespace: {}", NAMESPACE);
-        kubeClient().createNamespace(NAMESPACE);
-        cmdKubeClient().waitForResourceCreation("Namespace", NAMESPACE);
+        client.namespaces().resource(new NamespaceBuilder().withNewMetadata().withName(NAMESPACE).endMetadata().build()).create();
+        client.namespaces().withName(NAMESPACE).waitUntilCondition(ns -> ns.getStatus() != null && "Active".equals(ns.getStatus().getPhase()), 30_000, TimeUnit.MILLISECONDS);
 
         LOGGER.info("Creating CRDs");
         cluster.createCustomResources(TestUtils.CRD_KAFKA, TestUtils.CRD_KAFKA_CONNECT, TestUtils.CRD_KAFKA_MIRROR_MAKER_2, TestUtils.CRD_STRIMZI_POD_SET);
@@ -107,7 +112,6 @@ public class StrimziPodSetControllerIT {
         cluster.waitForCustomResourceDefinition(StrimziPodSet.CRD_NAME);
         LOGGER.info("Created CRDs");
 
-        client = new KubernetesClientBuilder().build();
         vertx = Vertx.vertx();
         kafkaOperator = new CrdOperator<>(vertx, client, Kafka.class, KafkaList.class, Kafka.RESOURCE_KIND);
         kafkaConnectOperator = new CrdOperator<>(vertx, client, KafkaConnect.class, KafkaConnectList.class, KafkaConnect.RESOURCE_KIND);
@@ -134,8 +138,8 @@ public class StrimziPodSetControllerIT {
 
         if (kubeClient().getNamespace(NAMESPACE) != null && System.getenv("SKIP_TEARDOWN") == null) {
             LOGGER.warn("Deleting namespace {} after tests run", NAMESPACE);
-            kubeClient().deleteNamespace(NAMESPACE);
-            cmdKubeClient().waitForResourceDeletion("Namespace", NAMESPACE);
+            client.namespaces().withName(NAMESPACE).withPropagationPolicy(DeletionPropagation.BACKGROUND).delete();
+            client.namespaces().withName(NAMESPACE).waitUntilCondition(Objects::isNull, 30_000, TimeUnit.MILLISECONDS);
         }
 
         vertx.close();
@@ -319,11 +323,16 @@ public class StrimziPodSetControllerIT {
             // Delete the PodSet
             podSetOp().inNamespace(NAMESPACE).withName(podSetName).delete();
 
-            // Check that pod is deleted after pod set deletion
+            /*
+             * Check that pod is deleted after pod set deletion
+             *
+             * The CR finalizer removal does not complete in a consistent amount of time,
+             * therefore the timeout for waiting on the deletion is increased to 1 minute.
+             */
             TestUtils.waitFor(
                     "Wait for Pod to be deleted",
                     100,
-                    10_000,
+                    60_000,
                     () -> client.pods().inNamespace(NAMESPACE).withName(podName).get() == null,
                     () -> context.failNow("Test timed out waiting for pod deletion!"));
 
@@ -655,11 +664,16 @@ public class StrimziPodSetControllerIT {
             // Delete the PodSet in non-cascading way
             podSetOp().inNamespace(NAMESPACE).withName(podSetName).withPropagationPolicy(DeletionPropagation.ORPHAN).delete();
 
-            // Check that the PodSet is deleted
+            /*
+             * Check that the PodSet is deleted
+             *
+             * The CR finalizer removal does not complete in a consistent amount of time,
+             * therefore the timeout for waiting on the deletion is increased to 1 minute.
+             */
             TestUtils.waitFor(
                     "Wait for StrimziPodSet deletion",
                     100,
-                    10_000,
+                    60_000,
                     () -> {
                         StrimziPodSet podSet = podSetOp().inNamespace(NAMESPACE).withName(podSetName).get();
                         return podSet == null;

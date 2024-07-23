@@ -4,9 +4,9 @@
  */
 package io.strimzi.operator.user.operator;
 
-import io.strimzi.api.kafka.model.AclOperation;
-import io.strimzi.api.kafka.model.AclResourcePatternType;
-import io.strimzi.api.kafka.model.AclRuleType;
+import io.strimzi.api.kafka.model.user.acl.AclOperation;
+import io.strimzi.api.kafka.model.user.acl.AclResourcePatternType;
+import io.strimzi.api.kafka.model.user.acl.AclRuleType;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.operator.resource.ReconcileResult;
 import io.strimzi.operator.user.ResourceUtils;
@@ -134,7 +134,7 @@ public class SimpleAclOperatorTest {
                     .toCompletableFuture().get();
 
             assertThat(result, is(notNullValue()));
-            assertThat(result.toString(), is("CREATED"));
+            assertThat(result.getType(), is(ReconcileResult.Type.CREATED));
 
             Collection<AclBinding> capturedAclBindings = aclBindingsCaptor.getValue();
             assertThat(capturedAclBindings, hasSize(3));
@@ -178,7 +178,7 @@ public class SimpleAclOperatorTest {
                     .toCompletableFuture().get();
 
             assertThat(result, is(notNullValue()));
-            assertThat(result.toString(), is("PATCH"));
+            assertThat(result.getType(), is(ReconcileResult.Type.PATCHED));
 
             // Create Write rule for resource 2
             Collection<AclBinding> capturedAclBindings = aclBindingsCaptor.getValue();
@@ -224,7 +224,7 @@ public class SimpleAclOperatorTest {
                     .toCompletableFuture().get();
 
             assertThat(result, is(notNullValue()));
-            assertThat(result.toString(), is("DELETED"));
+            assertThat(result.getType(), is(ReconcileResult.Type.DELETED));
 
             Collection<AclBindingFilter> capturedAclBindingFilters = aclBindingFiltersCaptor.getValue();
             assertThat(capturedAclBindingFilters, hasSize(1));

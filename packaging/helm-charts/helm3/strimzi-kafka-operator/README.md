@@ -9,8 +9,8 @@ Upgrading to Strimzi 0.32 and newer directly from Strimzi 0.22 and earlier is no
 Please follow the [documentation](https://strimzi.io/docs/operators/latest/full/deploying.html#assembly-upgrade-str) for more details.
 
 **!!! IMPORTANT !!!**
-From Strimzi 0.36 on, we support only Kubernetes 1.21 and newer.
-Kubernetes versions 1.19 and 1.20 are no longer supported.
+From Strimzi 0.40 on, we support only Kubernetes 1.23 and newer.
+Kubernetes versions 1.21 and 1.22 are no longer supported.
 
 ## Introduction
 
@@ -59,7 +59,7 @@ Strimzi is licensed under the [Apache License, Version 2.0](https://github.com/s
 
 ## Prerequisites
 
-- Kubernetes 1.21+
+- Kubernetes 1.23+
 
 ## Installing the Chart
 
@@ -91,11 +91,12 @@ the documentation for more details.
 | Parameter                                   | Description                                                                     | Default                      |
 |---------------------------------------------|---------------------------------------------------------------------------------|------------------------------|
 | `replicas`                                  | Number of replicas of the cluster operator                                      | 1                            |
+| `revisionHistoryLimit`                      | Number of replicaSet to keep of the operator deployment                         | 10                           |
 | `watchNamespaces`                           | Comma separated list of additional namespaces for the strimzi-operator to watch | []                           |
 | `watchAnyNamespace`                         | Watch the whole Kubernetes cluster (all namespaces)                             | `false`                      |
 | `defaultImageRegistry`                      | Default image registry for all the images                                       | `quay.io`                    |
 | `defaultImageRepository`                    | Default image registry for all the images                                       | `strimzi`                    |
-| `defaultImageTag`                           | Default image tag for all the images except Kafka Bridge                        | `latest`                     |
+| `defaultImageTag`                           | Default image tag for all the images except Kafka Bridge                        | `0.42.0`                     |
 | `image.registry`                            | Override default Cluster Operator image registry                                | `nil`                        |
 | `image.repository`                          | Override default Cluster Operator image repository                              | `nil`                        |
 | `image.name`                                | Cluster Operator image name                                                     | `cluster-operator`           |
@@ -113,6 +114,9 @@ the documentation for more details.
 | `rbac.create`                               | Whether to create RBAC related resources                                        | `yes`                        |
 | `serviceAccountCreate`                      | Whether to create a service account                                             | `yes`                        |
 | `serviceAccount`                            | Cluster Operator's service account                                              | `strimzi-cluster-operator`   |
+| `podDisruptionBudget.enabled`               | Whether to enable the podDisruptionBudget feature                               | `false`                      |
+| `podDisruptionBudget.minAvailable`          | Default value for how many pods must be running in a cluster                    | `1`                          |
+| `podDisruptionBudget.maxUnavailable`        | Default value for how many pods can be down                                     | `nil`                        |
 | `extraEnvs`                                 | Extra environment variables for the Cluster operator container                  | `[]`                         |
 | `kafka.image.registry`                      | Override default Kafka image registry                                           | `nil`                        |
 | `kafka.image.repository`                    | Override default Kafka image repository                                         | `nil`                        |
@@ -153,16 +157,10 @@ the documentation for more details.
 | `kafkaInit.image.name`                      | Init Kafka image name                                                           | `operator`                   |
 | `kafkaInit.image.tag`                       | Override default Init Kafka image tag                                           | `nil`                        |
 | `kafkaInit.image.digest`                    | Override Init Kafka image tag with digest                                       | `nil`                        |
-| `tlsSidecarEntityOperator.image.registry`   | Override default TLS Sidecar Entity Operator image registry                     | `nil`                        |
-| `tlsSidecarEntityOperator.image.repository` | Override default TLS Sidecar Entity Operator image repository                   | `nil`                        |
-| `tlsSidecarEntityOperator.image.name`       | TLS Sidecar Entity Operator image name                                          | `kafka`                      |
-| `tlsSidecarEntityOperator.image.tagPrefix`  | Override default TLS Sidecar Entity Operator image tag prefix                   | `nil`                        |
-| `tlsSidecarEntityOperator.image.tag`        | Override default TLS Sidecar Entity Operator image tag and ignore suffix        | `nil`                        |
-| `tlsSidecarEntityOperator.image.digest`     | Override TLS Sidecar Entity Operator image tag with digest                      | `nil`                        |
 | `kafkaBridge.image.registry`                | Override default Kafka Bridge image registry                                    | `quay.io`                    |
 | `kafkaBridge.image.repository`              | Override default Kafka Bridge image repository                                  | `strimzi`                    |
 | `kafkaBridge.image.name`                    | Kafka Bridge image name                                                         | `kafka-bridge`               |
-| `kafkaBridge.image.tag`                     | Override default Kafka Bridge image tag                                         | `0.26.1`                     |
+| `kafkaBridge.image.tag`                     | Override default Kafka Bridge image tag                                         | `0.29.0`                     |
 | `kafkaBridge.image.digest`                  | Override Kafka Bridge image tag with digest                                     | `nil`                        |
 | `kafkaExporter.image.registry`              | Override default Kafka Exporter image registry                                  | `nil`                        |
 | `kafkaExporter.image.repository`            | Override default Kafka Exporter image repository                                | `nil`                        |
@@ -181,9 +179,9 @@ the documentation for more details.
 | `kanikoExecutor.image.name`                 | Kaniko Executor image name                                                      | `kaniko-executor`            |
 | `kanikoExecutor.image.tag`                  | Override default Kaniko Executor image tag                                      | `nil`                        |
 | `kanikoExecutor.image.digest`               | Override Kaniko Executor image tag with digest                                  | `nil`                        |
-| `resources.limits.memory`                   | Memory constraint for limits                                                    | `256Mi`                      |
+| `resources.limits.memory`                   | Memory constraint for limits                                                    | `384Mi`                      |
 | `resources.limits.cpu`                      | CPU constraint for limits                                                       | `1000m`                      |
-| `resources.requests.memory`                 | Memory constraint for requests                                                  | `256Mi`                      |
+| `resources.requests.memory`                 | Memory constraint for requests                                                  | `384Mi`                      |
 | `livenessProbe.initialDelaySeconds`         | Liveness probe initial delay in seconds                                         | 10                           |
 | `livenessProbe.periodSeconds`               | Liveness probe period in seconds                                                | 30                           |
 | `readinessProbe.initialDelaySeconds`        | Readiness probe initial delay in seconds                                        | 10                           |

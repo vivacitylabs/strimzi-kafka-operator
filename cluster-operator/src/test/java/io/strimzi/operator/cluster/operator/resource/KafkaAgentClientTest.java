@@ -4,15 +4,14 @@
  */
 package io.strimzi.operator.cluster.operator.resource;
 
+import io.strimzi.operator.common.Reconciliation;
+import org.junit.jupiter.api.Test;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.spy;
-
-import org.junit.jupiter.api.Test;
-
-import io.strimzi.operator.common.Reconciliation;
 
 public class KafkaAgentClientTest {
 
@@ -61,5 +60,25 @@ public class KafkaAgentClientTest {
         assertEquals(-1, actual.code());
         assertEquals(0, actual.remainingLogsToRecover());
         assertEquals(0, actual.remainingSegmentsToRecover());
+    }
+
+    @Test
+    public void testZkMigrationDone() {
+        KafkaAgentClient kafkaAgentClient = spy(new KafkaAgentClient(RECONCILIATION, "my-cluster", "namespace"));
+        doAnswer(invocation -> "{\"state\":1}").when(kafkaAgentClient).doGet(any());
+
+        KRaftMigrationState actual = kafkaAgentClient.getKRaftMigrationState("mypod");
+        assertEquals(true, actual.isMigrationDone());
+        assertEquals(1, actual.state());
+    }
+
+    @Test
+    public void testZkMigrationRunning() {
+        KafkaAgentClient kafkaAgentClient = spy(new KafkaAgentClient(RECONCILIATION, "my-cluster", "namespace"));
+        doAnswer(invocation -> "{\"state\":2}").when(kafkaAgentClient).doGet(any());
+
+        KRaftMigrationState actual = kafkaAgentClient.getKRaftMigrationState("mypod");
+        assertEquals(false, actual.isMigrationDone());
+        assertEquals(2, actual.state());
     }
 }

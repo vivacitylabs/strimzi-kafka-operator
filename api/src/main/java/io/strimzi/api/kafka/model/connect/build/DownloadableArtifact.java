@@ -5,11 +5,12 @@
 package io.strimzi.api.kafka.model.connect.build;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import io.strimzi.api.kafka.model.Constants;
+import io.strimzi.api.kafka.model.common.Constants;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.strimzi.crdgenerator.annotations.Pattern;
 import io.sundr.builder.annotations.Buildable;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 /**
  * Artifact which can be just downloaded from an URL
@@ -20,9 +21,8 @@ import lombok.EqualsAndHashCode;
 )
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @EqualsAndHashCode(callSuper = true)
+@ToString(callSuper = true)
 public abstract class DownloadableArtifact extends Artifact {
-    private static final long serialVersionUID = 1L;
-
     private String url;
     private String sha512sum;
     private Boolean insecure;

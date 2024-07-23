@@ -17,17 +17,18 @@ import io.fabric8.kubernetes.api.model.Volume;
 import io.fabric8.kubernetes.api.model.VolumeBuilder;
 import io.fabric8.kubernetes.api.model.VolumeMount;
 import io.fabric8.kubernetes.api.model.VolumeMountBuilder;
-import io.strimzi.api.kafka.model.CertSecretSource;
-import io.strimzi.api.kafka.model.storage.EphemeralStorage;
-import io.strimzi.api.kafka.model.storage.JbodStorage;
-import io.strimzi.api.kafka.model.storage.PersistentClaimStorage;
-import io.strimzi.api.kafka.model.storage.SingleVolumeStorage;
-import io.strimzi.api.kafka.model.storage.Storage;
-import io.strimzi.api.kafka.model.template.PodTemplate;
+import io.strimzi.api.kafka.model.common.template.PodTemplate;
+import io.strimzi.api.kafka.model.kafka.EphemeralStorage;
+import io.strimzi.api.kafka.model.kafka.JbodStorage;
+import io.strimzi.api.kafka.model.kafka.KRaftMetadataStorage;
+import io.strimzi.api.kafka.model.kafka.PersistentClaimStorage;
+import io.strimzi.api.kafka.model.kafka.SingleVolumeStorage;
+import io.strimzi.api.kafka.model.kafka.Storage;
 import io.strimzi.operator.common.Util;
 import io.strimzi.operator.common.model.InvalidResourceException;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -40,6 +41,12 @@ public class VolumeUtils {
      * Base name used to name data volumes
      */
     public static final String DATA_VOLUME_NAME = "data";
+
+    /**
+     * The path where the Kafka data volumes are mounted
+     */
+    private static final String KAFKA_DATA_VOLUME_MOUNT_PATH = "/var/lib/kafka";
+
     /*
      * Default values for the Strimzi temporary directory
      */
@@ -323,23 +330,22 @@ public class VolumeUtils {
      * {@code true}. When called from outside, it should be set to {@code false}.
      *
      * @param storage   The storage configuration
-     * @param mountPath Path into which the volume should be mounted
      * @param jbod      Indicator whether the {@code storage} is part of JBOD array or not
      *
      * @return          List with Persistent Volume Claims templates
      */
-    public static List<VolumeMount> createVolumeMounts(Storage storage, String mountPath, boolean jbod) {
+    public static List<VolumeMount> createVolumeMounts(Storage storage, boolean jbod) {
         List<VolumeMount> volumeMounts = new ArrayList<>();
 
         if (storage != null) {
             if (storage instanceof JbodStorage) {
                 for (SingleVolumeStorage volume : ((JbodStorage) storage).getVolumes()) {
                     // it's called recursively for setting the information from the current volume
-                    volumeMounts.addAll(createVolumeMounts(volume, mountPath, true));
+                    volumeMounts.addAll(createVolumeMounts(volume, true));
                 }
             } else if (storage instanceof SingleVolumeStorage) {
                 String name = createVolumePrefix(((SingleVolumeStorage) storage).getId(), jbod);
-                String namedMountPath = mountPath + "/" + name;
+                String namedMountPath = KAFKA_DATA_VOLUME_MOUNT_PATH + "/" + name;
                 volumeMounts.add(createVolumeMount(name, namedMountPath));
             }
         }
@@ -428,90 +434,33 @@ public class VolumeUtils {
     }
 
     /**
-     * Creates the Client Secret Volume
-     * @param volumeList    List where the volumes will be added
-     * @param trustedCertificates   Trusted certificates for TLS connection
-     * @param isOpenShift   Indicates whether we run on OpenShift or not
+     * Creates the mount path of the volume where the KRaft metadata should be stored. This is either the volume marked
+     * for KRaft metadata or the volume with the lowest available ID. The actual metadata will be stored in a
+     * subdirectory of this volume. The exact name of the subdirectory depends on the node ID.
+     *
+     * @param storage       Storage configuration
+     *
+     * @return  Mount path of the volume where the KRaft metadata will be stored
      */
-    public static void createSecretVolume(List<Volume> volumeList, List<CertSecretSource> trustedCertificates, boolean isOpenShift) {
-        createSecretVolume(volumeList, trustedCertificates, isOpenShift, null);
-    }
+    protected static String kraftMetadataPath(Storage storage)  {
+        if (storage instanceof JbodStorage jbodStorage) {
+            SingleVolumeStorage kraftMetadataVolume = jbodStorage.getVolumes()
+                    .stream()
+                    .filter(v -> KRaftMetadataStorage.SHARED.equals(v.getKraftMetadata()))
+                    .findFirst()
+                    .orElse(jbodStorage.getVolumes().stream().min(Comparator.comparing(SingleVolumeStorage::getId)).orElse(null));
 
-    /**
-     * Creates the Client Secret Volume
-     * @param volumeList    List where the volumes will be added
-     * @param trustedCertificates   Trusted certificates for TLS connection
-     * @param isOpenShift   Indicates whether we run on OpenShift or not
-     * @param alias   Alias to reference the Kafka Cluster
-     */
-    public static void createSecretVolume(List<Volume> volumeList, List<CertSecretSource> trustedCertificates, boolean isOpenShift, String alias) {
-
-        if (trustedCertificates != null && trustedCertificates.size() > 0) {
-            for (CertSecretSource certSecretSource : trustedCertificates) {
-                addSecretVolume(volumeList, certSecretSource, isOpenShift, alias);
+            if (kraftMetadataVolume != null)    {
+                String name = createVolumePrefix(kraftMetadataVolume.getId(), true);
+                return KAFKA_DATA_VOLUME_MOUNT_PATH + "/" + name;
+            } else {
+                throw new InvalidResourceException("Cannot find any data volumes for storing KRaft metadata.");
             }
-        }
-    }
-
-    /**
-     * Creates the Volumes used for authentication of Kafka client based components, checking that the named volume has not already been
-     * created.
-     *
-     * @param volumeList    List where the volume will be added
-     * @param certSecretSource   Represents a certificate inside a Secret
-     * @param isOpenShift   Indicates whether we run on OpenShift or not
-     * @param alias   Alias to reference the Kafka Cluster
-     */
-    private static void addSecretVolume(List<Volume> volumeList, CertSecretSource certSecretSource, boolean isOpenShift, String alias) {
-        String volumeName = alias != null ? alias + '-' + certSecretSource.getSecretName() : certSecretSource.getSecretName();
-        // skipping if a volume with same name was already added
-        if (volumeList.stream().noneMatch(v -> v.getName().equals(volumeName))) {
-            volumeList.add(VolumeUtils.createSecretVolume(volumeName, certSecretSource.getSecretName(), isOpenShift));
-        }
-    }
-
-    /**
-     * Creates the Client tls encrypted Volume Mounts
-     *  @param volumeMountList    List where the volume mounts will be added
-     * @param trustedCertificates   Trusted certificates for TLS connection
-     * @param tlsVolumeMountPath   Path where the TLS certs should be mounted
-     */
-    public static void createSecretVolumeMount(List<VolumeMount> volumeMountList, List<CertSecretSource> trustedCertificates, String tlsVolumeMountPath) {
-        createSecretVolumeMount(volumeMountList, trustedCertificates, tlsVolumeMountPath, null);
-    }
-
-    /**
-     * Creates the Client Tls encrypted Volume Mount
-     *
-     * @param volumeMountList    List where the volume mounts will be added
-     * @param trustedCertificates  Trusted certificates for TLS connection
-     * @param tlsVolumeMountPath  Path where the TLS certs should be mounted
-     * @param alias   Alias to reference the Kafka Cluster
-     */
-    public static void createSecretVolumeMount(List<VolumeMount> volumeMountList, List<CertSecretSource> trustedCertificates, String tlsVolumeMountPath, String alias) {
-
-        if (trustedCertificates != null && trustedCertificates.size() > 0) {
-            for (CertSecretSource certSecretSource : trustedCertificates) {
-                addSecretVolumeMount(volumeMountList, certSecretSource, tlsVolumeMountPath, alias);
-            }
-        }
-    }
-
-    /**
-     * Creates the VolumeMount used for authentication of Kafka client based components, checking that the named volume mount has not already been
-     * created.
-     *
-     * @param volumeMountList    List where the volume mount will be added
-     * @param certSecretSource   Represents a certificate inside a Secret
-     * @param tlsVolumeMountPath   Path where the TLS certs should be mounted
-     * @param alias   Alias to reference the Kafka Cluster
-     */
-    private static void addSecretVolumeMount(List<VolumeMount> volumeMountList,  CertSecretSource certSecretSource, String tlsVolumeMountPath, String alias) {
-        String volumeMountName = alias != null ? alias + '-' + certSecretSource.getSecretName() : certSecretSource.getSecretName();
-        // skipping if a volume mount with same Secret name was already added
-        if (volumeMountList.stream().noneMatch(vm -> vm.getName().equals(volumeMountName))) {
-            volumeMountList.add(createVolumeMount(volumeMountName,
-                    tlsVolumeMountPath + certSecretSource.getSecretName()));
+        } else if (storage instanceof SingleVolumeStorage singleVolumeStorage)  {
+            String name = createVolumePrefix(singleVolumeStorage.getId(), false);
+            return KAFKA_DATA_VOLUME_MOUNT_PATH + "/" + name;
+        } else {
+            throw new InvalidResourceException("Cannot find any data volumes for storing KRaft metadata.");
         }
     }
 }

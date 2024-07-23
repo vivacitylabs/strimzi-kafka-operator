@@ -8,10 +8,10 @@ import io.fabric8.kubernetes.api.model.OwnerReference;
 import io.fabric8.kubernetes.api.model.OwnerReferenceBuilder;
 import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.ServicePort;
-import io.strimzi.api.kafka.model.template.InternalServiceTemplate;
-import io.strimzi.api.kafka.model.template.InternalServiceTemplateBuilder;
-import io.strimzi.api.kafka.model.template.IpFamily;
-import io.strimzi.api.kafka.model.template.IpFamilyPolicy;
+import io.strimzi.api.kafka.model.common.template.InternalServiceTemplate;
+import io.strimzi.api.kafka.model.common.template.InternalServiceTemplateBuilder;
+import io.strimzi.api.kafka.model.common.template.IpFamily;
+import io.strimzi.api.kafka.model.common.template.IpFamilyPolicy;
 import io.strimzi.operator.common.model.Labels;
 import io.strimzi.test.annotations.ParallelSuite;
 import io.strimzi.test.annotations.ParallelTest;
@@ -250,7 +250,7 @@ public class ServiceUtilsTest {
 
     @ParallelTest
     public void testCreateServiceWithNullTemplate() {
-        Service svc = ServiceUtils.createService(NAME, NAMESPACE, LABELS, OWNER_REFERENCE, null, List.of(PORT), Labels.fromMap(Map.of("selector-label", "selector-value")), "NodePort", Map.of("label", "label-value"), Map.of("anno", "anno-value"), IpFamilyPolicy.REQUIRE_DUAL_STACK, List.of(IpFamily.IPV6));
+        Service svc = ServiceUtils.createService(NAME, NAMESPACE, LABELS, OWNER_REFERENCE, null, List.of(PORT), Labels.fromMap(Map.of("selector-label", "selector-value")), "NodePort", Map.of("label", "label-value"), Map.of("anno", "anno-value"), IpFamilyPolicy.REQUIRE_DUAL_STACK, List.of(IpFamily.IPV6), true);
 
         assertThat(svc.getMetadata().getName(), is(NAME));
         assertThat(svc.getMetadata().getNamespace(), is(NAMESPACE));
@@ -265,11 +265,12 @@ public class ServiceUtilsTest {
         assertThat(svc.getSpec().getPorts().get(0), is(PORT));
         assertThat(svc.getSpec().getIpFamilyPolicy(), is("RequireDualStack"));
         assertThat(svc.getSpec().getIpFamilies(), is(List.of("IPv6")));
+        assertThat(svc.getSpec().getPublishNotReadyAddresses(), is(true));
     }
 
     @ParallelTest
     public void testCreateServiceWithTemplate() {
-        Service svc = ServiceUtils.createService(NAME, NAMESPACE, LABELS, OWNER_REFERENCE, TEMPLATE, List.of(PORT), Labels.fromMap(Map.of("selector-label", "selector-value")), "NodePort", Map.of("label", "label-value"), Map.of("anno", "anno-value"), IpFamilyPolicy.REQUIRE_DUAL_STACK, List.of(IpFamily.IPV6));
+        Service svc = ServiceUtils.createService(NAME, NAMESPACE, LABELS, OWNER_REFERENCE, TEMPLATE, List.of(PORT), Labels.fromMap(Map.of("selector-label", "selector-value")), "NodePort", Map.of("label", "label-value"), Map.of("anno", "anno-value"), IpFamilyPolicy.REQUIRE_DUAL_STACK, List.of(IpFamily.IPV6), false);
 
         assertThat(svc.getMetadata().getName(), is(NAME));
         assertThat(svc.getMetadata().getNamespace(), is(NAMESPACE));
@@ -284,5 +285,6 @@ public class ServiceUtilsTest {
         assertThat(svc.getSpec().getPorts().get(0), is(PORT));
         assertThat(svc.getSpec().getIpFamilyPolicy(), is("RequireDualStack"));
         assertThat(svc.getSpec().getIpFamilies(), is(List.of("IPv6")));
+        assertThat(svc.getSpec().getPublishNotReadyAddresses(), is(false));
     }
 }

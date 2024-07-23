@@ -10,10 +10,10 @@ import io.fabric8.kubernetes.api.model.Quantity;
 import io.fabric8.kubernetes.api.model.ResourceRequirementsBuilder;
 import io.fabric8.kubernetes.api.model.ServiceAccount;
 import io.fabric8.openshift.api.model.BuildConfig;
-import io.strimzi.api.kafka.model.ContainerEnvVarBuilder;
-import io.strimzi.api.kafka.model.KafkaConnect;
-import io.strimzi.api.kafka.model.KafkaConnectBuilder;
-import io.strimzi.api.kafka.model.KafkaConnectResources;
+import io.strimzi.api.kafka.model.common.ContainerEnvVarBuilder;
+import io.strimzi.api.kafka.model.connect.KafkaConnect;
+import io.strimzi.api.kafka.model.connect.KafkaConnectBuilder;
+import io.strimzi.api.kafka.model.connect.KafkaConnectResources;
 import io.strimzi.api.kafka.model.connect.build.Artifact;
 import io.strimzi.api.kafka.model.connect.build.JarArtifactBuilder;
 import io.strimzi.api.kafka.model.connect.build.PluginBuilder;
@@ -370,7 +370,7 @@ public class KafkaConnectBuildTest {
                 .build();
 
         InvalidResourceException thrown = assertThrows(InvalidResourceException.class, () -> {
-            KafkaConnectBuild build = KafkaConnectBuild.fromCrd(new Reconciliation("test", kc.getKind(), kc.getMetadata().getNamespace(), kc.getMetadata().getName()), kc, VERSIONS, SHARED_ENV_PROVIDER);
+            KafkaConnectBuild.fromCrd(new Reconciliation("test", kc.getKind(), kc.getMetadata().getNamespace(), kc.getMetadata().getName()), kc, VERSIONS, SHARED_ENV_PROVIDER);
         }, "InvalidResourceException was expected");
         assertThat(thrown.getMessage(), is("KafkaConnect .spec.image cannot be the same as .spec.build.output.image"));
     }

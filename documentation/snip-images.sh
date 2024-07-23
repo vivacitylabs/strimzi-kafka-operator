@@ -34,7 +34,6 @@ Strimzi image for running Kafka, including:
 * Kafka Connect
 * Kafka MirrorMaker
 * ZooKeeper
-* TLS Sidecars
 * Cruise Control
 
 |Operator
@@ -54,7 +53,7 @@ a|
 * {DockerOrg}/kafka-bridge:{BridgeDockerTag}
 
 a|
-Strimzi image for running the Strimzi kafka Bridge
+Strimzi image for running the Kafka Bridge
 
 |Strimzi Drain Cleaner
 a|

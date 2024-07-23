@@ -9,15 +9,15 @@ import io.fabric8.kubernetes.api.model.OwnerReferenceBuilder;
 import io.fabric8.kubernetes.api.model.PodBuilder;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.SecretBuilder;
-import io.strimzi.api.kafka.model.KafkaClusterSpec;
-import io.strimzi.api.kafka.model.KafkaClusterSpecBuilder;
+import io.strimzi.api.kafka.model.kafka.KafkaClusterSpec;
+import io.strimzi.api.kafka.model.kafka.KafkaClusterSpecBuilder;
 import io.strimzi.operator.cluster.model.NodeRef;
 import io.strimzi.operator.cluster.model.jmx.JmxModel;
 import io.strimzi.operator.cluster.model.jmx.SupportsJmx;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.SecretOperator;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.Labels;
 import io.strimzi.operator.common.operator.resource.ReconcileResult;
-import io.strimzi.operator.common.operator.resource.SecretOperator;
 import io.vertx.core.Future;
 import io.vertx.junit5.Checkpoint;
 import io.vertx.junit5.VertxExtension;
@@ -29,11 +29,11 @@ import org.mockito.ArgumentCaptor;
 import java.util.List;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -289,6 +289,28 @@ public class ReconcilerUtilsTest {
 
                     async.flag();
                 })));
+    }
+    
+    @Test
+    public void testHashSecretContent() {
+        Secret secret = new SecretBuilder()
+            .addToData(Map.of("username", "foo"))
+            .addToData(Map.of("password", "changeit"))
+            .build();
+        assertThat(ReconcilerUtils.hashSecretContent(secret), is("756937ae"));
+    }
+
+    @Test
+    public void testHashSecretContentWithNoData() {
+        Secret secret = new SecretBuilder().build();
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> ReconcilerUtils.hashSecretContent(secret));
+        assertThat(ex.getMessage(), is("Empty secret"));
+    }
+
+    @Test
+    public void testHashSecretContentWithNoSecret() {
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> ReconcilerUtils.hashSecretContent(null));
+        assertThat(ex.getMessage(), is("Secret not found"));
     }
 
     static class MockJmxCluster implements SupportsJmx {

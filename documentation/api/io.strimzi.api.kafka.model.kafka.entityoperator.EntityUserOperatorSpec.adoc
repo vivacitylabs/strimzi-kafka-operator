@@ -1,0 +1,88 @@
+Configures the User Operator.
+
+[id='property-user-operator-logging-{context}']
+= `logging`
+
+The User Operator has a configurable logger:
+
+* `rootLogger.level`
+
+The User Operator uses the Apache `log4j2` logger implementation.
+
+Use the `logging` property in the `entityOperator.userOperator` field of the `Kafka` resource to configure loggers and logger levels.
+
+You can set the log levels by specifying the logger and level directly (inline) or use a custom (external) ConfigMap.
+If a ConfigMap is used, you set `logging.valueFrom.configMapKeyRef.name` property to the name of the ConfigMap containing the external logging configuration. Inside the ConfigMap, the logging configuration is described using `log4j2.properties`. Both `logging.valueFrom.configMapKeyRef.name` and `logging.valueFrom.configMapKeyRef.key` properties are mandatory. A ConfigMap using the exact logging configuration specified is created with the custom resource when the Cluster Operator is running, then recreated after each reconciliation. If you do not specify a custom ConfigMap, default logging settings are used. If a specific logger value is not set, upper-level logger settings are inherited for that logger.
+For more information about log levels, see {ApacheLoggers}.
+
+Here we see examples of `inline` and `external` logging.
+The `inline` logging specifies the `rootLogger.level`.
+You can also set log levels for specific classes or loggers by adding them to the loggers property.
+
+.Inline logging
+[source,yaml,subs="+quotes,attributes"]
+----
+apiVersion: {KafkaApiVersion}
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    # ...
+  zookeeper:
+    # ...
+  entityOperator:
+    # ...
+    userOperator:
+      watchedNamespace: my-topic-namespace
+      reconciliationIntervalMs: 60000
+      logging:
+        type: inline
+        loggers:
+          rootLogger.level: INFO
+          logger.uop.name: io.strimzi.operator.user # <1>
+          logger.uop.level: DEBUG # <2> 
+          logger.abstractcache.name: io.strimzi.operator.user.operator.cache.AbstractCache # <3>
+          logger.abstractcache.level: TRACE # <4>
+          logger.jetty.level: DEBUG # <5>
+          
+  # ...
+----
+<1> Creates a logger for the `user` package.
+<2> Sets the logging level for the `user` package.
+<3> Creates a logger for the `AbstractCache` class.
+<4> Sets the logging level for the `AbstractCache` class.
+<5> Changes the logging level for the default `jetty` logger. The `jetty` logger is part of the logging configuration provided with Strimzi.
+By default, it is set to `INFO`.  
+
+NOTE: When investigating an issue with the operator, it's usually sufficient to change the `rootLogger` to `DEBUG` to get more detailed logs. However, keep in mind that setting the log level to `DEBUG` may result in a large amount of log output and may have performance implications.
+
+.External logging
+[source,yaml,subs="+quotes,attributes"]
+----
+apiVersion: {KafkaApiVersion}
+kind: Kafka
+metadata:
+  name: my-cluster
+spec:
+  kafka:
+    # ...
+  zookeeper:
+    # ...
+  entityOperator:
+    # ...
+    userOperator:
+      watchedNamespace: my-topic-namespace
+      reconciliationIntervalMs: 60000
+      logging:
+        type: external
+        valueFrom:
+          configMapKeyRef:
+            name: customConfigMap
+            key: user-operator-log4j2.properties
+   # ...
+----
+
+.Garbage collector (GC)
+
+Garbage collector logging can also be enabled (or disabled) using the xref:con-common-configuration-garbage-collection-reference[`jvmOptions` property].

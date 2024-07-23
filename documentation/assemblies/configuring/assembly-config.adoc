@@ -9,9 +9,6 @@
 Configure and manage a Strimzi deployment to your precise needs using Strimzi custom resources.
 Strimzi provides example custom resources with each release, allowing you to configure and create instances of supported Kafka components.
 Fine-tune your deployment by configuring custom resources to include additional features according to your specific requirements. 
-For specific areas of configuration, namely metrics, logging, and external configuration for Kafka Connect connectors, you can also use `ConfigMap` resources.
-By using a `ConfigMap` resource to incorporate configuration, you centralize maintenance. 
-You can also use configuration providers to load configuration from external sources, which we recommend for supplying the credentials for Kafka Connect connector configuration.
 
 Use custom resources to configure and create instances of the following components:
 
@@ -21,50 +18,86 @@ Use custom resources to configure and create instances of the following componen
 * Kafka Bridge
 * Cruise Control
 
-You can also use custom resource configuration to manage your instances or modify your deployment to introduce additional features.
-This might include configuration that supports the following:
-
-* (Preview) Specifying node pools
-* Securing client access to Kafka brokers
-* Accessing Kafka brokers from outside the cluster
-* Creating topics
-* Creating users (clients)
-* Controlling feature gates
-* Changing logging frequency
-* Allocating resource limits and requests
-* Introducing features, such as Strimzi Drain Cleaner, Cruise Control, or distributed tracing.
+You can use configuration to manage your instances or modify your deployment to introduce additional features.
+New features are sometimes introduced through feature gates, which are controlled through operator configuration.  
 
 The link:{BookURLConfiguring}[Strimzi Custom Resource API Reference^] describes the properties you can use in your configuration.
 
-NOTE: Labels applied to a custom resource are also applied to the Kubernetes resources making up its cluster.
-This provides a convenient mechanism for resources to be labeled as required.
+.Important Kafka configuration options
+Through configuration of the `Kafka` resource, you can introduce the following:
+
+* Data storage
+* Rack awareness
+* Listeners for authenticated client access to the Kafka cluster
+* Topic Operator for managing Kafka topics
+* User Operator for managing Kafka users (clients)  
+* Cruise Control for cluster rebalancing
+* Kafka Exporter for collecting lag metrics
+
+Use `KafkaNodePool` resources to configure distinct groups of nodes within a Kafka cluster.
+
+.Common configuration
+Common configuration is configured independently for each component, such as the following:
+
+* Metrics configuration
+* Healthchecks and liveness probes
+* Resource limits and requests (CPU/Memory)
+* Logging frequency
+* JVM options for maximum and minimum memory allocation
+
+.Config maps to centralize configuration
+For specific areas of configuration, namely metrics, logging, and external configuration for Kafka Connect connectors, you can also use `ConfigMap` resources.
+By using a `ConfigMap` resource to incorporate configuration, you centralize maintenance. 
+You can also use configuration providers to load configuration from external sources, which we recommend for supplying the credentials for Kafka Connect connector configuration.
+
+.TLS certificate management
+When deploying Kafka, the Cluster Operator automatically sets up and renews TLS certificates to enable encryption and authentication within your cluster.
+If required, you can manually renew the cluster and clients CA certificates before their renewal period starts.
+You can also replace the keys used by the cluster and clients CA certificates.
+For more information, see xref:proc-renewing-ca-certs-manually-{context}[Renewing CA certificates manually] and xref:proc-replacing-private-keys-{context}[Replacing private keys].
 
 .Applying changes to a custom resource configuration file
-
 You add configuration to a custom resource using `spec` properties. 
 After adding the configuration, you can use `kubectl` to apply the changes to a custom resource configuration file:
 
+.Applying changes to a resource configuration file
 [source,shell,subs=+quotes]
 ----
 kubectl apply -f <kafka_configuration_file>
 ----
 
+NOTE: Labels applied to a custom resource are also applied to the Kubernetes resources making up its cluster.
+This provides a convenient mechanism for resources to be labeled as required.
+
 //How to access examples
 include::../../modules/configuring/con-config-examples.adoc[leveloffset=+1]
 
 //`Kafka` resource config
-include::../../modules/configuring/con-config-kafka.adoc[leveloffset=+1]
+include::../../modules/configuring/con-config-kafka-kraft.adoc[leveloffset=+1]
 //setting static broker limits
 include::../../modules/managing/proc-setting-broker-limits.adoc[leveloffset=+2]
+//Delete kafka nodes using annotations
+include::../../modules/configuring/proc-manual-delete-pod-pvc-kafka.adoc[leveloffset=+2]
+
+//zookeeper-specific
+include::../../modules/configuring/con-config-kafka-zookeeper.adoc[leveloffset=+1]
 //Zookeeper's default configuration
 include::../../modules/configuring/con-zookeeper-default-config.adoc[leveloffset=+2]
+//Delete zookeeper nodes using annotations
+include::../../modules/configuring/proc-manual-delete-pod-pvc-zookeeper.adoc[leveloffset=+2]
 
 //configuring node pools
 include::../../modules/configuring/con-config-node-pools.adoc[leveloffset=+1]
 include::../../modules/configuring/proc-managing-node-pools-ids.adoc[leveloffset=+2]
+include::../../modules/configuring/con-node-pools-racks.adoc[leveloffset=+2]
 include::../../modules/configuring/proc-scaling-up-node-pools.adoc[leveloffset=+2]
 include::../../modules/configuring/proc-scaling-down-node-pools.adoc[leveloffset=+2]
 include::../../modules/configuring/proc-moving-node-pools.adoc[leveloffset=+2]
+include::../../modules/configuring/con-config-node-pool-roles.adoc[leveloffset=+2]
+include::../../modules/configuring/proc-splitting-node-pool-roles.adoc[leveloffset=+2]
+include::../../modules/configuring/proc-joining-node-pool-roles.adoc[leveloffset=+2]
+include::../../modules/configuring/proc-managing-storage-node-pools.adoc[leveloffset=+2]
+include::../../modules/configuring/proc-managing-storage-affinity-node-pools.adoc[leveloffset=+2]
 include::../../modules/configuring/proc-migrating-clusters-node-pools.adoc[leveloffset=+2]
 
 //`Kafka` config for operators
@@ -76,6 +109,8 @@ include::../../modules/configuring/con-configuring-user-operator.adoc[leveloffse
 
 //cluster operator config env vars
 include::../../modules/operators/con-configuring-cluster-operator.adoc[leveloffset=+1]
+//pausing reconciliation of custom resources
+include::../../modules/operators/proc-pausing-reconciliation.adoc[leveloffset=+2]
 //enabling leader election
 include::../../assemblies/operators/assembly-using-multiple-cluster-operators.adoc[leveloffset=+2]
 //cluster operator proxy config
@@ -89,6 +124,12 @@ include::../../modules/configuring/con-config-kafka-connect.adoc[leveloffset=+1]
 include::../../modules/configuring/con-config-kafka-connect-multiple-instances.adoc[leveloffset=+1]
 //if authorization is enabled, configure the Kafka Connect user for read/write access rights
 include::../../modules/configuring/proc-config-kafka-connect-user-authorization.adoc[leveloffset=+2]
+//Procedure to manually pause or stop a Kafka connector
+include::../../modules/configuring/proc-manual-stop-pause-connector.adoc[leveloffset=+2]
+//Procedure to manually restart a Kafka connector
+include::../../modules/configuring/proc-manual-restart-connector.adoc[leveloffset=+2]
+//Procedure to manually restart a Kafka connector task
+include::../../modules/configuring/proc-manual-restart-connector-task.adoc[leveloffset=+2]
 
 //`KafkaMirrorMaker2` resource config
 include::../../modules/configuring/con-config-mirrormaker2.adoc[leveloffset=+1]
@@ -106,6 +147,12 @@ include::../../modules/configuring/con-config-mirrormaker2-tasks-max.adoc[levelo
 include::../../modules/configuring/con-config-mirrormaker2-acls.adoc[leveloffset=+2]
 //securing connections to and from mirrormaker
 include::../../modules/configuring/proc-config-mirrormaker2-securing-connection.adoc[leveloffset=+2]
+//Procedure to manually pause or stop an MM2 connector
+include::../../modules/configuring/proc-manual-stop-pause-mirrormaker2-connector.adoc[leveloffset=+2]
+//Procedure to restart an MM2 connector
+include::../../modules/configuring/proc-manual-restart-mirrormaker2-connector.adoc[leveloffset=+2]
+//Procedure to restart an MM2 connector task
+include::../../modules/configuring/proc-manual-restart-mirrormaker2-connector-task.adoc[leveloffset=+2]
 
 //`KafkaMirrorMaker` resource config
 include::../../modules/configuring/con-config-mirrormaker.adoc[leveloffset=+1]
@@ -118,6 +165,9 @@ include::../../assemblies/configuring/assembly-storage.adoc[leveloffset=+1]
 
 //configuring CPU and memory resources and limits
 include::../../modules/configuring/con-config-resources.adoc[leveloffset=+1]
+
+//Kubernetes labels
+include::../../modules/configuring/ref-kubernetes-labels.adoc[leveloffset=+1]
 
 //scheduling separate Kafka pods 
 include::assembly-scheduling.adoc[leveloffset=+1]

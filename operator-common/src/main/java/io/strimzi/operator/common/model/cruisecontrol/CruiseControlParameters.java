@@ -85,9 +85,19 @@ public enum CruiseControlParameters {
     /**
      * Broker ID
      */
-    BROKER_ID("brokerid");
+    BROKER_ID("brokerid"),
 
-    String key;
+    /**
+     * Substates filter
+     */
+    SUBSTATES("substates"),
+
+    /**
+     * Skip rack awareness check
+     */
+    SKIP_RACK_AWARENESS_CHECK("skip_rack_awareness_check");
+
+    private final String key;
 
     /**
      * Creates the Enum from String
@@ -108,7 +118,7 @@ public enum CruiseControlParameters {
      * @throws UnsupportedEncodingException Thrown when UTF_8 encoding is not supported
      */
     public String asPair(String value) throws UnsupportedEncodingException {
-        return key + "=" + URLEncoder.encode(value, StandardCharsets.UTF_8.toString());
+        return key + "=" + URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 
     /**
@@ -121,7 +131,7 @@ public enum CruiseControlParameters {
      * @throws UnsupportedEncodingException Thrown when UTF_8 encoding is not supported
      */
     public String asList(Iterable<String> values) throws UnsupportedEncodingException {
-        return key + "=" + URLEncoder.encode(String.join(",", values), StandardCharsets.UTF_8.toString());
+        return key + "=" + URLEncoder.encode(String.join(",", values), StandardCharsets.UTF_8);
     }
 
     @Override

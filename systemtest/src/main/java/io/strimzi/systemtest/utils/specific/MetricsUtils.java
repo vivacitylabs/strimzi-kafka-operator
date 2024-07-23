@@ -5,9 +5,9 @@
 package io.strimzi.systemtest.utils.specific;
 
 import io.fabric8.kubernetes.api.model.LabelSelector;
-import io.strimzi.systemtest.Constants;
-import io.strimzi.systemtest.metrics.MetricsCollector;
-import io.strimzi.systemtest.resources.ComponentType;
+import io.skodjob.testframe.MetricsCollector;
+import io.strimzi.systemtest.TestConstants;
+import io.strimzi.systemtest.metrics.ClusterOperatorMetricsComponent;
 import io.strimzi.systemtest.resources.ResourceManager;
 import io.strimzi.test.TestUtils;
 import io.strimzi.test.executor.Exec;
@@ -59,15 +59,13 @@ public class MetricsUtils {
     }
 
     public static MetricsCollector setupCOMetricsCollectorInNamespace(String coName, String coNamespace, String coScraperName) {
-
-        LabelSelector scraperDeploymentPodLabel = new LabelSelector(null, Map.of(Constants.APP_POD_LABEL, coScraperName));
+        LabelSelector scraperDeploymentPodLabel = new LabelSelector(null, Map.of(TestConstants.APP_POD_LABEL, coScraperName));
         String coScraperPodName = ResourceManager.kubeClient().listPods(coNamespace, scraperDeploymentPodLabel).get(0).getMetadata().getName();
 
         return new MetricsCollector.Builder()
             .withScraperPodName(coScraperPodName)
             .withNamespaceName(coNamespace)
-            .withComponentType(ComponentType.ClusterOperator)
-            .withComponentName(coName)
+            .withComponent(ClusterOperatorMetricsComponent.create(coNamespace, coName))
             .build();
     }
 
@@ -130,8 +128,8 @@ public class MetricsUtils {
 
     public static void assertMetricResourcesIs(MetricsCollector collector, String kind, Predicate<Double> predicate, String message) {
         String metric = "strimzi_resources\\{kind=\"" + kind + "\",.*}";
-        TestUtils.waitFor("metric " + metric + "is " + message, Constants.POLL_INTERVAL_FOR_RESOURCE_READINESS, Constants.GLOBAL_TIMEOUT_SHORT, () -> {
-            collector.collectMetricsFromPods();
+        TestUtils.waitFor("metric " + metric + "is " + message, TestConstants.POLL_INTERVAL_FOR_RESOURCE_READINESS, TestConstants.GLOBAL_TIMEOUT_SHORT, () -> {
+            collector.collectMetricsFromPods(TestConstants.METRICS_COLLECT_TIMEOUT);
             ArrayList<Double> values = createPatternAndCollect(collector, metric);
             double actualValue = values.stream().mapToDouble(i -> i).sum();
             return predicate.test(actualValue);

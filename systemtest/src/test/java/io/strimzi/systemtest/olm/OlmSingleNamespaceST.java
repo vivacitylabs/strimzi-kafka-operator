@@ -10,16 +10,15 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
-import org.junit.jupiter.api.extension.ExtensionContext;
 
 import java.util.Collections;
 
-import static io.strimzi.systemtest.Constants.BRIDGE;
-import static io.strimzi.systemtest.Constants.CONNECT;
-import static io.strimzi.systemtest.Constants.CRUISE_CONTROL;
-import static io.strimzi.systemtest.Constants.MIRROR_MAKER;
-import static io.strimzi.systemtest.Constants.MIRROR_MAKER2;
-import static io.strimzi.systemtest.Constants.OLM;
+import static io.strimzi.systemtest.TestConstants.BRIDGE;
+import static io.strimzi.systemtest.TestConstants.CONNECT;
+import static io.strimzi.systemtest.TestConstants.CRUISE_CONTROL;
+import static io.strimzi.systemtest.TestConstants.MIRROR_MAKER;
+import static io.strimzi.systemtest.TestConstants.MIRROR_MAKER2;
+import static io.strimzi.systemtest.TestConstants.OLM;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 @Tag(OLM)
@@ -35,8 +34,8 @@ public class OlmSingleNamespaceST extends OlmAbstractST {
 
     @Test
     @Order(2)
-    void testDeployExampleKafkaUser(ExtensionContext extensionContext) {
-        doTestDeployExampleKafkaUser(extensionContext);
+    void testDeployExampleKafkaUser() {
+        doTestDeployExampleKafkaUser();
     }
 
     @Test
@@ -76,13 +75,13 @@ public class OlmSingleNamespaceST extends OlmAbstractST {
     @Test
     @Order(8)
     @Tag(CRUISE_CONTROL)
-    void testDeployExampleKafkaRebalance(ExtensionContext extensionContext) {
-        doTestDeployExampleKafkaRebalance(extensionContext);
+    void testDeployExampleKafkaRebalance() {
+        doTestDeployExampleKafkaRebalance();
     }
 
     @BeforeAll
-    void setup(ExtensionContext extensionContext) {
-        clusterOperator = clusterOperator.defaultInstallation(extensionContext)
+    void setup() {
+        clusterOperator = clusterOperator.defaultInstallation()
             .withNamespace(NAMESPACE)
             .withWatchingNamespaces(NAMESPACE)
             .withBindingsNamespaces(Collections.singletonList(NAMESPACE))

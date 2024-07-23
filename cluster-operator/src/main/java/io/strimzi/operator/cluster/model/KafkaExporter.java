@@ -14,16 +14,16 @@ import io.fabric8.kubernetes.api.model.Volume;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicy;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicyIngressRule;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaClusterSpec;
-import io.strimzi.api.kafka.model.KafkaExporterResources;
-import io.strimzi.api.kafka.model.KafkaExporterSpec;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.Probe;
-import io.strimzi.api.kafka.model.ProbeBuilder;
-import io.strimzi.api.kafka.model.template.DeploymentTemplate;
-import io.strimzi.api.kafka.model.template.KafkaExporterTemplate;
-import io.strimzi.api.kafka.model.template.PodTemplate;
+import io.strimzi.api.kafka.model.common.Probe;
+import io.strimzi.api.kafka.model.common.ProbeBuilder;
+import io.strimzi.api.kafka.model.common.template.DeploymentTemplate;
+import io.strimzi.api.kafka.model.common.template.PodTemplate;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaClusterSpec;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.exporter.KafkaExporterResources;
+import io.strimzi.api.kafka.model.kafka.exporter.KafkaExporterSpec;
+import io.strimzi.api.kafka.model.kafka.exporter.KafkaExporterTemplate;
 import io.strimzi.operator.cluster.ClusterOperatorConfig;
 import io.strimzi.operator.cluster.model.metrics.MetricsModel;
 import io.strimzi.operator.cluster.model.securityprofiles.ContainerSecurityProviderContextImpl;
@@ -36,13 +36,16 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static io.strimzi.api.kafka.model.template.DeploymentStrategy.ROLLING_UPDATE;
+import static io.strimzi.api.kafka.model.common.template.DeploymentStrategy.ROLLING_UPDATE;
 
 /**
  * Kafka Exporter model
  */
 public class KafkaExporter extends AbstractModel {
-    protected static final String COMPONENT_TYPE = "kafka-exporter";
+    /**
+     * Type of the component which this model class represents. It is used for labeling and naming purposes.
+     */
+    public static final String COMPONENT_TYPE = "kafka-exporter";
 
     // Configuration for mounting certificates
     protected static final String KAFKA_EXPORTER_CERTS_VOLUME_NAME = "kafka-exporter-certs";
@@ -64,6 +67,7 @@ public class KafkaExporter extends AbstractModel {
     protected static final String ENV_VAR_KAFKA_EXPORTER_TOPIC_EXCLUDE_REGEX = "KAFKA_EXPORTER_TOPIC_EXCLUDE_REGEX";
     protected static final String ENV_VAR_KAFKA_EXPORTER_KAFKA_SERVER = "KAFKA_EXPORTER_KAFKA_SERVER";
     protected static final String ENV_VAR_KAFKA_EXPORTER_ENABLE_SARAMA = "KAFKA_EXPORTER_ENABLE_SARAMA";
+    protected static final String ENV_VAR_KAFKA_EXPORTER_OFFSET_SHOW_ALL = "KAFKA_EXPORTER_OFFSET_SHOW_ALL";
 
     protected static final String CO_ENV_VAR_CUSTOM_KAFKA_EXPORTER_POD_LABELS = "STRIMZI_CUSTOM_KAFKA_EXPORTER_LABELS";
 
@@ -72,6 +76,7 @@ public class KafkaExporter extends AbstractModel {
     protected String groupExcludeRegex;
     protected String topicExcludeRegex;
     protected boolean saramaLoggingEnabled;
+    protected boolean showAllOffsets;
     /* test */ String exporterLogging;
     protected String version;
 
@@ -93,9 +98,10 @@ public class KafkaExporter extends AbstractModel {
      * @param sharedEnvironmentProvider Shared environment provider
      */
     protected KafkaExporter(Reconciliation reconciliation, HasMetadata resource, SharedEnvironmentProvider sharedEnvironmentProvider) {
-        super(reconciliation, resource, KafkaExporterResources.deploymentName(resource.getMetadata().getName()), COMPONENT_TYPE, sharedEnvironmentProvider);
+        super(reconciliation, resource, KafkaExporterResources.componentName(resource.getMetadata().getName()), COMPONENT_TYPE, sharedEnvironmentProvider);
 
         this.saramaLoggingEnabled = false;
+        this.showAllOffsets = true;
     }
 
     /**
@@ -132,6 +138,7 @@ public class KafkaExporter extends AbstractModel {
 
             result.exporterLogging = spec.getLogging();
             result.saramaLoggingEnabled = spec.getEnableSaramaLogging();
+            result.showAllOffsets = spec.getShowAllOffsets();
 
             if (spec.getTemplate() != null) {
                 KafkaExporterTemplate template = spec.getTemplate();
@@ -159,13 +166,14 @@ public class KafkaExporter extends AbstractModel {
     /**
      * Generates Kafka Exporter Deployment
      *
+     * @param podAnnotations    Map with the annotations that will be used for the Pod metadata
      * @param isOpenShift       Flag indicating whether we are on OpenShift or not
      * @param imagePullPolicy   Image pull policy
      * @param imagePullSecrets  List of Image Pull Secrets
      *
      * @return  Generated deployment
      */
-    public Deployment generateDeployment(boolean isOpenShift, ImagePullPolicy imagePullPolicy, List<LocalObjectReference> imagePullSecrets) {
+    public Deployment generateDeployment(Map<String, String> podAnnotations, boolean isOpenShift, ImagePullPolicy imagePullPolicy, List<LocalObjectReference> imagePullSecrets) {
         return WorkloadUtils.createDeployment(
                 componentName,
                 namespace,
@@ -180,7 +188,7 @@ public class KafkaExporter extends AbstractModel {
                         labels,
                         templatePod,
                         DEFAULT_POD_LABELS,
-                        Map.of(),
+                        podAnnotations,
                         templatePod != null ? templatePod.getAffinity() : null,
                         null,
                         List.of(createContainer(imagePullPolicy)),
@@ -224,6 +232,7 @@ public class KafkaExporter extends AbstractModel {
         }
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_KAFKA_EXPORTER_KAFKA_SERVER, KafkaResources.bootstrapServiceName(cluster) + ":" + KafkaCluster.REPLICATION_PORT));
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_KAFKA_EXPORTER_ENABLE_SARAMA, String.valueOf(saramaLoggingEnabled)));
+        varList.add(ContainerUtils.createEnvVar(ENV_VAR_KAFKA_EXPORTER_OFFSET_SHOW_ALL, String.valueOf(showAllOffsets)));
 
         // Add shared environment variables used for all containers
         varList.addAll(sharedEnvironmentProvider.variables());
@@ -257,18 +266,18 @@ public class KafkaExporter extends AbstractModel {
 
     /**
      * Generate the Secret containing the Kafka Exporter certificate signed by the cluster CA certificate used for TLS based
-     * internal communication with Kafka and Zookeeper.
-     * It also contains the related Kafka Exporter private key.
+     * internal communication with Kafka and Zookeeper. It also contains the related Kafka Exporter private key.
      *
-     * @param clusterCa The cluster CA.
-     * @param isMaintenanceTimeWindowsSatisfied Indicates whether we are in the maintenance window or not.
-     *                                          This is used for certificate renewals
+     * @param clusterCa                             The cluster CA.
+     * @param existingSecret                        The existing secret with Kafka certificates
+     * @param isMaintenanceTimeWindowsSatisfied     Indicates whether we are in the maintenance window or not.
+     *                                              This is used for certificate renewals
+     *
      * @return The generated Secret.
      */
-    public Secret generateSecret(ClusterCa clusterCa, boolean isMaintenanceTimeWindowsSatisfied) {
-        Secret secret = clusterCa.kafkaExporterSecret();
-        return ModelUtils.buildSecret(reconciliation, clusterCa, secret, namespace, KafkaExporterResources.secretName(cluster), componentName,
-                "kafka-exporter", labels, ownerReference, isMaintenanceTimeWindowsSatisfied);
+    public Secret generateCertificatesSecret(ClusterCa clusterCa, Secret existingSecret, boolean isMaintenanceTimeWindowsSatisfied) {
+        return CertUtils.buildTrustedCertificateSecret(reconciliation, clusterCa, existingSecret, namespace, KafkaExporterResources.secretName(cluster), componentName,
+                COMPONENT_TYPE, labels, ownerReference, isMaintenanceTimeWindowsSatisfied);
     }
 
     /**

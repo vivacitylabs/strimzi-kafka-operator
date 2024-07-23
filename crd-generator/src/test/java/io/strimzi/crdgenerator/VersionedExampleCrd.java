@@ -4,9 +4,7 @@
  */
 package io.strimzi.crdgenerator;
 
-import java.util.List;
-import java.util.Objects;
-
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import io.fabric8.kubernetes.client.CustomResource;
@@ -17,6 +15,9 @@ import io.strimzi.crdgenerator.annotations.Minimum;
 import io.strimzi.crdgenerator.annotations.MinimumItems;
 import io.strimzi.crdgenerator.annotations.Pattern;
 import io.strimzi.crdgenerator.annotations.PresentInVersions;
+
+import java.util.List;
+import java.util.Objects;
 
 @Crd(
     spec = @Crd.Spec(
@@ -61,13 +62,15 @@ import io.strimzi.crdgenerator.annotations.PresentInVersions;
         }
     ))
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonPropertyOrder({"apiVersion", "kind", "metadata", "spec", "status"})
+@JsonPropertyOrder({"apiVersion", "kind", "metadata", "spec", "status",
+    "someInt", "someOtherInt", "listWithMinimum", "removed", "added"})
 public class VersionedExampleCrd<T, U extends Number, V extends U> extends CustomResource {
 
     @Description(apiVersions = "v1", value = "V1 description")
     @Description(apiVersions = "v2", value = "V2 description")
     @Pattern(apiVersions = "v1", value = "v1Pattern")
     @Pattern(apiVersions = "v2", value = "v2Pattern")
+    @JsonIgnore
     public String ignored;
 
     @Minimum(apiVersions = "v1", value = 0)

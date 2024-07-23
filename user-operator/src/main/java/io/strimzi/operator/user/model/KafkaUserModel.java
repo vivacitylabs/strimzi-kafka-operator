@@ -9,26 +9,27 @@ import io.fabric8.kubernetes.api.model.OwnerReference;
 import io.fabric8.kubernetes.api.model.OwnerReferenceBuilder;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.SecretBuilder;
-import io.strimzi.api.kafka.model.AclRule;
-import io.strimzi.api.kafka.model.KafkaUser;
-import io.strimzi.api.kafka.model.KafkaUserAuthentication;
-import io.strimzi.api.kafka.model.KafkaUserAuthorizationSimple;
-import io.strimzi.api.kafka.model.KafkaUserQuotas;
-import io.strimzi.api.kafka.model.KafkaUserScramSha512ClientAuthentication;
-import io.strimzi.api.kafka.model.KafkaUserTlsClientAuthentication;
-import io.strimzi.api.kafka.model.KafkaUserTlsExternalClientAuthentication;
+import io.strimzi.api.kafka.model.user.KafkaUser;
+import io.strimzi.api.kafka.model.user.KafkaUserAuthentication;
+import io.strimzi.api.kafka.model.user.KafkaUserAuthorizationSimple;
+import io.strimzi.api.kafka.model.user.KafkaUserQuotas;
+import io.strimzi.api.kafka.model.user.KafkaUserScramSha512ClientAuthentication;
+import io.strimzi.api.kafka.model.user.KafkaUserTlsClientAuthentication;
+import io.strimzi.api.kafka.model.user.KafkaUserTlsExternalClientAuthentication;
+import io.strimzi.api.kafka.model.user.acl.AclRule;
 import io.strimzi.certs.CertAndKey;
 import io.strimzi.certs.CertManager;
 import io.strimzi.certs.OpenSslCertManager;
-import io.strimzi.operator.common.model.Ca;
-import io.strimzi.operator.common.model.ClientsCa;
-import io.strimzi.operator.common.model.InvalidResourceException;
-import io.strimzi.operator.common.model.PasswordGenerator;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.ReconciliationLogger;
 import io.strimzi.operator.common.Util;
+import io.strimzi.operator.common.model.Ca;
+import io.strimzi.operator.common.model.ClientsCa;
+import io.strimzi.operator.common.model.InvalidResourceException;
 import io.strimzi.operator.common.model.Labels;
+import io.strimzi.operator.common.model.PasswordGenerator;
 import io.strimzi.operator.user.model.acl.SimpleAclRule;
+
 import javax.naming.InvalidNameException;
 import javax.naming.ldap.LdapName;
 
@@ -353,14 +354,14 @@ public class KafkaUserModel {
             }
 
             LOGGER.debugCr(reconciliation, "Loading request password from Kubernetes Secret {}", desiredPasswordSecretName());
-            this.scramSha512Password = new String(Base64.getDecoder().decode(password), StandardCharsets.US_ASCII);
+            this.scramSha512Password = Util.decodeFromBase64(password);
             return;
         } else if (userSecret != null) {
             // Secret already exists -> lets verify if it has a password
             String password = userSecret.getData().get(KEY_PASSWORD);
             if (password != null && !password.isEmpty()) {
                 LOGGER.debugCr(reconciliation, "Re-using password which already exists");
-                this.scramSha512Password = new String(Base64.getDecoder().decode(password), StandardCharsets.US_ASCII);
+                this.scramSha512Password = Util.decodeFromBase64(password);
                 return;
             }
         }
@@ -377,7 +378,7 @@ public class KafkaUserModel {
      * @return decoded value
      */
     protected byte[] decodeFromSecret(Secret secret, String key) {
-        return Base64.getDecoder().decode(secret.getData().get(key));
+        return Util.decodeBytesFromBase64(secret.getData().get(key));
     }
 
     /**

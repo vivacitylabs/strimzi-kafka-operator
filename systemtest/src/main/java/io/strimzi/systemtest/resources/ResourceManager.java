@@ -19,18 +19,14 @@ import io.fabric8.kubernetes.api.model.rbac.ClusterRoleBinding;
 import io.fabric8.kubernetes.client.CustomResource;
 import io.fabric8.kubernetes.client.dsl.MixedOperation;
 import io.strimzi.api.kafka.Crds;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaConnector;
-import io.strimzi.api.kafka.model.KafkaTopic;
-import io.strimzi.api.kafka.model.KafkaUser;
-import io.strimzi.api.kafka.model.Spec;
-import io.strimzi.api.kafka.model.nodepool.KafkaNodePool;
-import io.strimzi.api.kafka.model.status.Condition;
-import io.strimzi.api.kafka.model.status.Status;
-import io.strimzi.operator.common.Annotations;
-import io.strimzi.operator.common.model.Labels;
-import io.strimzi.systemtest.Constants;
+import io.strimzi.api.kafka.model.common.Condition;
+import io.strimzi.api.kafka.model.common.Spec;
+import io.strimzi.api.kafka.model.connector.KafkaConnector;
+import io.strimzi.api.kafka.model.kafka.Status;
+import io.strimzi.api.kafka.model.topic.KafkaTopic;
+import io.strimzi.api.kafka.model.user.KafkaUser;
 import io.strimzi.systemtest.Environment;
+import io.strimzi.systemtest.TestConstants;
 import io.strimzi.systemtest.enums.ConditionStatus;
 import io.strimzi.systemtest.enums.DeploymentTypes;
 import io.strimzi.systemtest.resources.crd.KafkaBridgeResource;
@@ -59,6 +55,8 @@ import io.strimzi.systemtest.resources.kubernetes.SecretResource;
 import io.strimzi.systemtest.resources.kubernetes.ServiceAccountResource;
 import io.strimzi.systemtest.resources.kubernetes.ServiceResource;
 import io.strimzi.systemtest.resources.kubernetes.ValidatingWebhookConfigurationResource;
+import io.strimzi.systemtest.resources.openshift.BuildConfigResource;
+import io.strimzi.systemtest.resources.openshift.ImageStreamResource;
 import io.strimzi.systemtest.resources.openshift.OperatorGroupResource;
 import io.strimzi.systemtest.resources.openshift.SubscriptionResource;
 import io.strimzi.systemtest.resources.operator.BundleResource;
@@ -68,6 +66,7 @@ import io.strimzi.test.k8s.HelmClient;
 import io.strimzi.test.k8s.KubeClient;
 import io.strimzi.test.k8s.KubeClusterResource;
 import io.strimzi.test.k8s.cmdClient.KubeCmdClient;
+import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.extension.ExtensionContext;
@@ -100,7 +99,9 @@ public class ResourceManager {
 
     public static final Map<String, Stack<ResourceItem>> STORED_RESOURCES = new LinkedHashMap<>();
 
-    private static String coDeploymentName = Constants.STRIMZI_DEPLOYMENT_NAME;
+    private static String coDeploymentName = TestConstants.STRIMZI_DEPLOYMENT_NAME;
+
+    private static ThreadLocal<ExtensionContext> testContext = new ThreadLocal<>();
     private static ResourceManager instance;
 
     public static synchronized ResourceManager getInstance() {
@@ -120,6 +121,14 @@ public class ResourceManager {
 
     public static HelmClient helmClient() {
         return KubeClusterResource.helmClusterClient();
+    }
+
+    public static void setTestContext(ExtensionContext context) {
+        testContext.set(context);
+    }
+
+    public static ExtensionContext getTestContext() {
+        return testContext.get();
     }
 
     private final ResourceType<?>[] resourceTypes = new ResourceType[]{
@@ -150,71 +159,42 @@ public class ResourceManager {
         new ValidatingWebhookConfigurationResource(),
         new SubscriptionResource(),
         new OperatorGroupResource(),
-        new KafkaNodePoolResource()
+        new KafkaNodePoolResource(),
+        new BuildConfigResource(),
+        new ImageStreamResource()
     };
     @SafeVarargs
-    public final <T extends HasMetadata> void createResourceWithoutWait(ExtensionContext testContext, T... resources) {
-        createResource(testContext, false, resources);
+    public final <T extends HasMetadata> void createResourceWithoutWait(T... resources) {
+        createResource(false, resources);
     }
 
     @SafeVarargs
-    public final <T extends HasMetadata> void createResourceWithWait(ExtensionContext testContext, T... resources) {
-        createResource(testContext, true, resources);
+    public final <T extends HasMetadata> void createResourceWithWait(T... resources) {
+        createResource(true, resources);
     }
 
     @SafeVarargs
-    private final <T extends HasMetadata> void createResource(ExtensionContext testContext, boolean waitReady, T... resources) {
+    private <T extends HasMetadata> void createResource(boolean waitReady, T... resources) {
         for (T resource : resources) {
             ResourceType<T> type = findResourceType(resource);
 
-            setNamespaceInResource(testContext, resource);
+            setNamespaceInResource(resource);
 
-            if (resource.getMetadata().getNamespace() == null) {
-                LOGGER.info("Creating/Updating {} {}",
-                        resource.getKind(), resource.getMetadata().getName());
-            } else {
-                LOGGER.info("Creating/Updating {} {}/{}",
-                        resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName());
-            }
+            logResourceCreationOrUpdate(resource);
 
-            if (resource.getKind().equals(Kafka.RESOURCE_KIND)) {
-                // in case we want to run tests with KafkaNodePools enabled, we want to use it for all the Kafka resources
-                if (Environment.isKafkaNodePoolsEnabled()) {
-                    Map<String, String> annotations = resource.getMetadata().getAnnotations();
-                    annotations.put(Annotations.ANNO_STRIMZI_IO_NODE_POOLS, "enabled");
-                    resource.getMetadata().setAnnotations(annotations);
-                }
-
-                // in case when Kafka contains "strimzi.io/node-pools: enabled" annotation, we want to create KafkaNodePool
-                // and configure it as Kafka resource
-                createKafkaNodePoolIfNeeded(testContext, (Kafka) resource);
-            }
-
-            if (Environment.isKRaftModeEnabled() && !Environment.isUnidirectionalTopicOperatorEnabled()) {
-                if (Objects.equals(resource.getKind(), Kafka.RESOURCE_KIND)) {
-                    // Remove TO when KRaft mode is enabled, because it is not supported
-                    ((Kafka) resource).getSpec().getEntityOperator().setTopicOperator(null);
-                }
-                if (Objects.equals(resource.getKind(), KafkaTopic.RESOURCE_KIND)) {
-                    // Do not create KafkaTopic when KRaft is enabled
-                    LOGGER.warn("KafkaTopic: {}/{} will not be created, because Topic Operator is not enabled with KRaft mode", resource.getMetadata().getNamespace(), resource.getMetadata().getName());
-                    continue;
-                }
-            }
-
-            labelResource(testContext, resource);
+            labelResource(resource);
 
             // adding test.suite and test.case labels to the PodTemplate
-            if (resource.getKind().equals(Constants.JOB)) {
+            if (resource.getKind().equals(TestConstants.JOB)) {
                 this.copyTestSuiteAndTestCaseControllerLabelsIntoPodTemplate(resource, ((Job) resource).getSpec().getTemplate());
-            } else if (resource.getKind().equals(Constants.DEPLOYMENT)) {
+            } else if (resource.getKind().equals(TestConstants.DEPLOYMENT)) {
                 this.copyTestSuiteAndTestCaseControllerLabelsIntoPodTemplate(resource, ((Deployment) resource).getSpec().getTemplate());
             }
             type.create(resource);
 
             synchronized (this) {
-                STORED_RESOURCES.computeIfAbsent(testContext.getDisplayName(), k -> new Stack<>());
-                STORED_RESOURCES.get(testContext.getDisplayName()).push(
+                STORED_RESOURCES.computeIfAbsent(getTestContext().getDisplayName(), k -> new Stack<>());
+                STORED_RESOURCES.get(getTestContext().getDisplayName()).push(
                     new ResourceItem<T>(
                         () -> deleteResource(resource),
                         resource
@@ -234,51 +214,12 @@ public class ResourceManager {
         }
     }
 
-    private void createKafkaNodePoolIfNeeded(ExtensionContext testContext, Kafka resource) {
-        Map<String, String> annotations = resource.getMetadata().getAnnotations();
-
-        if (annotations.get(Annotations.ANNO_STRIMZI_IO_NODE_POOLS) != null && annotations.get(Annotations.ANNO_STRIMZI_IO_NODE_POOLS).equals("enabled")) {
-            KafkaNodePool nodePool = KafkaNodePoolResource.convertKafkaResourceToKafkaNodePool(resource);
-
-            setNamespaceInResource(testContext, nodePool);
-
-            boolean nodePoolAlreadyExists = KafkaNodePoolResource.kafkaNodePoolClient().inNamespace(resource.getMetadata().getNamespace()).list().getItems()
-                .stream()
-                .anyMatch(knp -> {
-                    Map<String, String> labels = knp.getMetadata().getLabels();
-                    return labels.containsKey(Labels.STRIMZI_CLUSTER_LABEL) && labels.get(Labels.STRIMZI_CLUSTER_LABEL).equals(resource.getMetadata().getName());
-                });
-
-            if (nodePoolAlreadyExists) {
-                LOGGER.info("Node pool will not be created as part of process of creation of Kafka instance as it already exists");
-                return;
-            }
-
-            labelResource(testContext, nodePool);
-
-            ResourceType<KafkaNodePool> nodePoolType = findResourceType(nodePool);
-            nodePoolType.create(nodePool);
-
-            // add it to stack
-            synchronized (this) {
-                STORED_RESOURCES.computeIfAbsent(testContext.getDisplayName(), k -> new Stack<>());
-                STORED_RESOURCES.get(testContext.getDisplayName()).push(
-                    new ResourceItem<>(
-                        () -> deleteResource(nodePool),
-                        nodePool
-                    ));
-            }
-
-            nodePoolType.waitForReadiness(nodePool);
-        }
-    }
-
-    private <T extends HasMetadata> void labelResource(ExtensionContext testContext, T resource) {
+    private <T extends HasMetadata> void labelResource(T resource) {
         // If we are create resource in test case we annotate it with label. This is needed for filtering when
         // we collect logs from Pods, ReplicaSets, Deployments etc.
         Map<String, String> labels;
-        if (testContext.getTestMethod().isPresent()) {
-            String testCaseName = testContext.getRequiredTestMethod().getName();
+        if (getTestContext().getTestMethod().isPresent()) {
+            String testCaseName = getTestContext().getRequiredTestMethod().getName();
             // because label values `must be no more than 63 characters`
             if (testCaseName.length() > 63) {
                 // we cut to 62 characters
@@ -287,34 +228,34 @@ public class ResourceManager {
 
             if (resource.getMetadata().getLabels() == null) {
                 labels = new HashMap<>();
-                labels.put(Constants.TEST_CASE_NAME_LABEL, testCaseName);
+                labels.put(TestConstants.TEST_CASE_NAME_LABEL, testCaseName);
             } else {
                 labels = new HashMap<>(resource.getMetadata().getLabels());
-                labels.put(Constants.TEST_CASE_NAME_LABEL, testCaseName);
+                labels.put(TestConstants.TEST_CASE_NAME_LABEL, testCaseName);
             }
             resource.getMetadata().setLabels(labels);
         } else {
             // this is labeling for shared resources in @BeforeAll
-            if (testContext.getTestClass().isPresent()) {
-                final String testSuiteName = StUtils.removePackageName(testContext.getRequiredTestClass().getName());
+            if (getTestContext().getTestClass().isPresent()) {
+                final String testSuiteName = StUtils.removePackageName(getTestContext().getRequiredTestClass().getName());
 
                 if (resource.getMetadata().getLabels() == null) {
                     labels = new HashMap<>();
-                    labels.put(Constants.TEST_SUITE_NAME_LABEL, testSuiteName);
+                    labels.put(TestConstants.TEST_SUITE_NAME_LABEL, testSuiteName);
                 } else {
                     labels = new HashMap<>(resource.getMetadata().getLabels());
-                    labels.put(Constants.TEST_SUITE_NAME_LABEL, testSuiteName);
+                    labels.put(TestConstants.TEST_SUITE_NAME_LABEL, testSuiteName);
                 }
                 resource.getMetadata().setLabels(labels);
             }
         }
     }
 
-    private <T extends HasMetadata> void setNamespaceInResource(ExtensionContext testContext, T resource) {
+    private <T extends HasMetadata> void setNamespaceInResource(T resource) {
         // if it is parallel namespace test we are gonna replace resource a namespace
-        if (StUtils.isParallelNamespaceTest(testContext)) {
+        if (StUtils.isParallelNamespaceTest(getTestContext())) {
             if (!Environment.isNamespaceRbacScope()) {
-                final String namespace = testContext.getStore(ExtensionContext.Namespace.GLOBAL).get(Constants.NAMESPACE_KEY).toString();
+                final String namespace = getTestContext().getStore(ExtensionContext.Namespace.GLOBAL).get(TestConstants.NAMESPACE_KEY).toString();
                 LOGGER.info("Setting Namespace: {} to resource: {}/{}", namespace, resource.getKind(), resource.getMetadata().getName());
                 resource.getMetadata().setNamespace(namespace);
             }
@@ -330,13 +271,7 @@ public class ResourceManager {
                 continue;
             }
 
-            if (resource.getMetadata().getNamespace() == null) {
-                LOGGER.info("Deleting of {} {}",
-                        resource.getKind(), resource.getMetadata().getName());
-            } else {
-                LOGGER.info("Deleting of {} {}/{}",
-                        resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName());
-            }
+            logResourceDeletion(resource);
 
             try {
                 type.delete(resource);
@@ -376,7 +311,7 @@ public class ResourceManager {
         boolean[] resourceReady = new boolean[1];
 
         TestUtils.waitFor("resource condition: " + condition.getConditionName() + " to be fulfilled for resource " + resource.getKind() + ":" + resource.getMetadata().getName(),
-            Constants.GLOBAL_POLL_INTERVAL_MEDIUM, ResourceOperation.getTimeoutForResourceReadiness(resource.getKind()),
+            TestConstants.GLOBAL_POLL_INTERVAL_MEDIUM, ResourceOperation.getTimeoutForResourceReadiness(resource.getKind()),
             () -> {
                 T res = type.get(resource.getMetadata().getNamespace(), resource.getMetadata().getName());
                 resourceReady[0] =  condition.getPredicate().test(res);
@@ -390,7 +325,7 @@ public class ResourceManager {
     }
 
     /**
-     * Auxiliary method for copying {@link Constants#TEST_SUITE_NAME_LABEL} and {@link Constants#TEST_CASE_NAME_LABEL} labels
+     * Auxiliary method for copying {@link TestConstants#TEST_SUITE_NAME_LABEL} and {@link TestConstants#TEST_CASE_NAME_LABEL} labels
      * into PodTemplate ensuring that in case of failure {@link io.strimzi.systemtest.logs.LogCollector} will collect all
      * related Pods, which corespondents to such Controller (i.e., Job, Deployment)
      *
@@ -406,12 +341,12 @@ public class ResourceManager {
             final Map<String, String> podLabels = new HashMap<>(resourcePodTemplate.getMetadata().getLabels());
 
             // 2. a) add label for test.suite
-            if (controllerLabels.containsKey(Constants.TEST_SUITE_NAME_LABEL)) {
-                podLabels.putIfAbsent(Constants.TEST_SUITE_NAME_LABEL, controllerLabels.get(Constants.TEST_SUITE_NAME_LABEL));
+            if (controllerLabels.containsKey(TestConstants.TEST_SUITE_NAME_LABEL)) {
+                podLabels.putIfAbsent(TestConstants.TEST_SUITE_NAME_LABEL, controllerLabels.get(TestConstants.TEST_SUITE_NAME_LABEL));
             }
             // 2. b) add label for test.case
-            if (controllerLabels.containsKey(Constants.TEST_CASE_NAME_LABEL)) {
-                podLabels.putIfAbsent(Constants.TEST_CASE_NAME_LABEL, controllerLabels.get(Constants.TEST_CASE_NAME_LABEL));
+            if (controllerLabels.containsKey(TestConstants.TEST_CASE_NAME_LABEL)) {
+                podLabels.putIfAbsent(TestConstants.TEST_CASE_NAME_LABEL, controllerLabels.get(TestConstants.TEST_CASE_NAME_LABEL));
             }
             // 3. modify PodTemplates labels for LogCollector using reference and thus not need to return
             resourcePodTemplate.getMetadata().setLabels(podLabels);
@@ -420,12 +355,11 @@ public class ResourceManager {
 
     /**
      * Synchronizing all resources which are inside specific extension context.
-     * @param testContext context of the test case
      * @param <T> type of the resource which inherits from HasMetadata f.e Kafka, KafkaConnect, Pod, Deployment etc..
      */
     @SuppressWarnings(value = "unchecked")
-    public final <T extends HasMetadata> void synchronizeResources(ExtensionContext testContext) {
-        Stack<ResourceItem> resources = STORED_RESOURCES.get(testContext.getDisplayName());
+    public final <T extends HasMetadata> void synchronizeResources() {
+        Stack<ResourceItem> resources = STORED_RESOURCES.get(getTestContext().getDisplayName());
 
         // sync all resources
         for (ResourceItem resource : resources) {
@@ -444,21 +378,21 @@ public class ResourceManager {
         Crds.operation(kubeClient().getClient(), crdClass, listClass).inNamespace(namespace).resource(toBeReplaced).update();
     }
 
-    public void deleteResources(ExtensionContext testContext) {
+    public void deleteResources() {
         LOGGER.info(String.join("", Collections.nCopies(76, "#")));
-        if (!STORED_RESOURCES.containsKey(testContext.getDisplayName()) || STORED_RESOURCES.get(testContext.getDisplayName()).isEmpty()) {
-            LOGGER.info("In context {} is everything deleted", testContext.getDisplayName());
+        if (!STORED_RESOURCES.containsKey(getTestContext().getDisplayName()) || STORED_RESOURCES.get(getTestContext().getDisplayName()).isEmpty()) {
+            LOGGER.info("In context {} is everything deleted", getTestContext().getDisplayName());
         } else {
-            LOGGER.info("Deleting all resources for {}", testContext.getDisplayName());
+            LOGGER.info("Deleting all resources for {}", getTestContext().getDisplayName());
         }
 
         // if stack is created for specific test suite or test case
-        AtomicInteger numberOfResources = STORED_RESOURCES.get(testContext.getDisplayName()) != null ?
-            new AtomicInteger(STORED_RESOURCES.get(testContext.getDisplayName()).size()) :
+        AtomicInteger numberOfResources = STORED_RESOURCES.get(getTestContext().getDisplayName()) != null ?
+            new AtomicInteger(STORED_RESOURCES.get(getTestContext().getDisplayName()).size()) :
             // stack has no elements
             new AtomicInteger(0);
-        while (STORED_RESOURCES.containsKey(testContext.getDisplayName()) && numberOfResources.get() > 0) {
-            Stack<ResourceItem> s = STORED_RESOURCES.get(testContext.getDisplayName());
+        while (STORED_RESOURCES.containsKey(getTestContext().getDisplayName()) && numberOfResources.get() > 0) {
+            Stack<ResourceItem> s = STORED_RESOURCES.get(getTestContext().getDisplayName());
 
             while (!s.isEmpty()) {
                 ResourceItem resourceItem = s.pop();
@@ -471,8 +405,20 @@ public class ResourceManager {
                 numberOfResources.decrementAndGet();
             }
         }
-        STORED_RESOURCES.remove(testContext.getDisplayName());
+        STORED_RESOURCES.remove(getTestContext().getDisplayName());
         LOGGER.info(String.join("", Collections.nCopies(76, "#")));
+    }
+
+    public void deleteResourcesOfTypeWithoutWait(final String resourceKind) {
+        // Delete all resources of the specified kind
+        cmdKubeClient().deleteAllByResource(resourceKind);
+        LOGGER.info("Deleted all resources of kind: {}", resourceKind);
+
+        // Clear the instance stack of such resources
+        STORED_RESOURCES.forEach((key, stack) -> stack.removeIf(resourceItem ->
+            resourceItem.getResource() != null && resourceKind.equals(resourceItem.getResource().getKind())
+        ));
+        LOGGER.info("Cleared all resources of kind: {} from the resource stack", resourceKind);
     }
 
     /**
@@ -543,10 +489,10 @@ public class ResourceManager {
     }
 
     public static <T extends CustomResource<? extends Spec, ? extends Status>> boolean waitForResourceStatus(MixedOperation<T, ?, ?> operation, String kind, String namespace, String name, Enum<?> statusType, ConditionStatus conditionStatus, long resourceTimeoutMs) {
-        LOGGER.info("Waiting for {}: {}/{} will have desired state: {}", kind, namespace, name, statusType);
+        LOGGER.log(ResourceManager.getInstance().determineLogLevel(), "Waiting for {}: {}/{} will have desired state: {}", kind, namespace, name, statusType);
 
         TestUtils.waitFor(String.format("%s: %s#%s will have desired state: %s", kind, namespace, name, statusType),
-            Constants.POLL_INTERVAL_FOR_RESOURCE_READINESS, resourceTimeoutMs,
+            TestConstants.POLL_INTERVAL_FOR_RESOURCE_READINESS, resourceTimeoutMs,
             () -> operation.inNamespace(namespace)
                 .withName(name)
                 .get().getStatus().getConditions().stream().anyMatch(condition -> condition.getType().equals(statusType.toString()) && condition.getStatus().equals(conditionStatus.toString())),
@@ -554,7 +500,7 @@ public class ResourceManager {
                 .withName(name)
                 .get()));
 
-        LOGGER.info("{}: {}/{} is in desired state: {}", kind, namespace, name, statusType);
+        LOGGER.log(ResourceManager.getInstance().determineLogLevel(), "{}: {}/{} is in desired state: {}", kind, namespace, name, statusType);
         return true;
     }
 
@@ -575,7 +521,7 @@ public class ResourceManager {
         LOGGER.info("Waiting for " + resourceType + "/" + resourceName + " readiness");
 
         TestUtils.waitFor("readiness of resource " + resourceType + "/" + resourceName,
-                Constants.GLOBAL_POLL_INTERVAL, Constants.GLOBAL_CMD_CLIENT_TIMEOUT,
+                TestConstants.GLOBAL_POLL_INTERVAL, TestConstants.GLOBAL_CMD_CLIENT_TIMEOUT,
             () -> ResourceManager.cmdKubeClient().getResourceReadiness(resourceType, resourceName));
         LOGGER.info("Resource " + resourceType + "/" + resourceName + " is ready");
     }
@@ -594,7 +540,7 @@ public class ResourceManager {
         LOGGER.info("Waiting for {}: {}/{} will contain desired status message: {}", kind, namespace, name, message);
 
         TestUtils.waitFor(String.format("%s: %s#%s will contain desired status message: %s", kind, namespace, name, message),
-            Constants.POLL_INTERVAL_FOR_RESOURCE_READINESS, resourceTimeoutMs,
+            TestConstants.POLL_INTERVAL_FOR_RESOURCE_READINESS, resourceTimeoutMs,
             () -> operation.inNamespace(namespace)
                 .withName(name)
                 .get().getStatus().getConditions().stream().anyMatch(condition -> condition.getMessage().contains(message) && condition.getStatus().equals("True")),
@@ -610,8 +556,8 @@ public class ResourceManager {
     private <T extends HasMetadata> ResourceType<T> findResourceType(T resource) {
 
         // for conflicting deployment types
-        if (resource.getKind().equals(Constants.DEPLOYMENT)) {
-            String deploymentType = resource.getMetadata().getLabels().get(Constants.DEPLOYMENT_TYPE);
+        if (resource.getKind().equals(TestConstants.DEPLOYMENT)) {
+            String deploymentType = resource.getMetadata().getLabels().get(TestConstants.DEPLOYMENT_TYPE);
             DeploymentTypes deploymentTypes = DeploymentTypes.valueOf(deploymentType);
 
             switch (deploymentTypes) {
@@ -633,5 +579,52 @@ public class ResourceManager {
             }
         }
         return null;
+    }
+
+    /**
+     * Logs the creation or updating process of a Kubernetes resource at an appropriate log level.
+     * The log level is dynamically determined based on the presence of the PERFORMANCE tag
+     * in the test context's tags, switching between DEBUG for performance tests and INFO otherwise.
+     *
+     * @param <T>       The type parameter extending HasMetadata, representing Kubernetes resources.
+     * @param resource  The Kubernetes resource being created or updated. This includes details such
+     *                  as the resource kind and name, and optionally, the namespace.
+     */
+    private <T extends HasMetadata> void logResourceCreationOrUpdate(T resource) {
+        final String namespace = resource.getMetadata().getNamespace();
+        final String message = namespace == null ?
+            String.format("Creating/Updating %s %s", resource.getKind(), resource.getMetadata().getName()) :
+            String.format("Creating/Updating %s %s/%s", resource.getKind(), namespace, resource.getMetadata().getName());
+
+        LOGGER.log(determineLogLevel(), message);
+    }
+
+    /**
+     * Logs the deletion process of a Kubernetes resource at an appropriate log level.
+     * Similar to creation/updating, the log level is determined by whether the PERFORMANCE
+     * tag is present in the test context's tags, using DEBUG for performance tests and INFO for others.
+     *
+     * @param <T>       The type parameter extending HasMetadata, representing Kubernetes resources.
+     * @param resource  The Kubernetes resource being deleted. This method logs the resource's kind,
+     *                  name, and if available, the namespace, to provide detailed traceability of the operation.
+     */
+    private <T extends HasMetadata> void logResourceDeletion(T resource) {
+        String namespace = resource.getMetadata().getNamespace();
+        String message = namespace == null ?
+            String.format("Deleting of %s %s", resource.getKind(), resource.getMetadata().getName()) :
+            String.format("Deleting of %s %s/%s", resource.getKind(), namespace, resource.getMetadata().getName());
+
+        LOGGER.log(determineLogLevel(), message);
+    }
+
+    /**
+     * Determines the appropriate log level based on the presence of the PERFORMANCE tag
+     * in the current test context. Uses DEBUG level for performance tests and INFO level
+     * for other tests.
+     *
+     * @return          The appropriate logging level (DEBUG or INFO) for the current test context.
+     */
+    public Level determineLogLevel() {
+        return ResourceManager.getTestContext().getTags().contains(TestConstants.PERFORMANCE) ? Level.DEBUG : Level.INFO;
     }
 }

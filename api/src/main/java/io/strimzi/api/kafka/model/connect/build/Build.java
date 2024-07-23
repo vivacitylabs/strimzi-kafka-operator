@@ -8,15 +8,15 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import io.fabric8.kubernetes.api.model.ResourceRequirements;
-import io.strimzi.api.kafka.model.Constants;
-import io.strimzi.api.kafka.model.UnknownPropertyPreserving;
+import io.strimzi.api.kafka.model.common.Constants;
+import io.strimzi.api.kafka.model.common.UnknownPropertyPreserving;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.strimzi.crdgenerator.annotations.DescriptionFile;
 import io.strimzi.crdgenerator.annotations.KubeLink;
 import io.sundr.builder.annotations.Buildable;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
-import java.io.Serializable;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,17 +29,15 @@ import java.util.Map;
         builderPackage = Constants.FABRIC8_KUBERNETES_API
 )
 @JsonInclude(JsonInclude.Include.NON_DEFAULT)
-@JsonPropertyOrder({ "output", "connectorPlugins", "resources" })
+@JsonPropertyOrder({ "output", "plugins", "resources" })
 @DescriptionFile
 @EqualsAndHashCode
-public class Build implements Serializable, UnknownPropertyPreserving {
-    private static final long serialVersionUID = 1L;
-
+@ToString
+public class Build implements UnknownPropertyPreserving {
     private Output output;
     private List<Plugin> plugins;
     private ResourceRequirements resources;
-
-    private Map<String, Object> additionalProperties = new HashMap<>(0);
+    private Map<String, Object> additionalProperties;
 
     @Description("Configures where should the newly built image be stored. " +
             "Required")
@@ -76,13 +74,14 @@ public class Build implements Serializable, UnknownPropertyPreserving {
 
     @Override
     public Map<String, Object> getAdditionalProperties() {
-        return this.additionalProperties;
+        return this.additionalProperties != null ? this.additionalProperties : Map.of();
     }
 
     @Override
     public void setAdditionalProperty(String name, Object value) {
+        if (this.additionalProperties == null) {
+            this.additionalProperties = new HashMap<>(2);
+        }
         this.additionalProperties.put(name, value);
     }
-
 }
-

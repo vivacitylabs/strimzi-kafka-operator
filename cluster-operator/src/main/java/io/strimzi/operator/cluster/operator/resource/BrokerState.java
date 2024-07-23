@@ -4,10 +4,10 @@
  */
 package io.strimzi.operator.cluster.operator.resource;
 
-import java.util.Map;
-
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.util.Map;
 
 /**
  * Java representation of the JSON response from the /v1/broker-state endpoint of the KafkaAgent
@@ -15,9 +15,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 class BrokerState {
     private static final int BROKER_RECOVERY_STATE = 2;
 
-    private int code;
-
-    private Map<String, Object> recoveryState;
+    private final int code;
+    private final Map<String, Object> recoveryState;
 
     /**
      * Constructor
