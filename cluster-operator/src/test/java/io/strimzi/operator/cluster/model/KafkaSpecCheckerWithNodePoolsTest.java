@@ -4,16 +4,17 @@
  */
 package io.strimzi.operator.cluster.model;
 
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
+import io.strimzi.api.kafka.model.common.Condition;
+import io.strimzi.api.kafka.model.kafka.EphemeralStorage;
+import io.strimzi.api.kafka.model.kafka.KRaftMetadataStorage;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
+import io.strimzi.api.kafka.model.kafka.PersistentClaimStorageBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePool;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePoolBuilder;
 import io.strimzi.api.kafka.model.nodepool.ProcessRoles;
-import io.strimzi.api.kafka.model.status.Condition;
-import io.strimzi.api.kafka.model.storage.EphemeralStorage;
-import io.strimzi.api.kafka.model.storage.PersistentClaimStorageBuilder;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
 import io.strimzi.operator.cluster.model.nodepools.NodePoolUtils;
 import io.strimzi.operator.common.Annotations;
@@ -41,15 +42,25 @@ public class KafkaSpecCheckerWithNodePoolsTest {
                 .endMetadata()
                 .withNewSpec()
                     .withNewKafka()
-                        .withReplicas(3)
-                        .withNewJbodStorage()
-                            .withVolumes(new PersistentClaimStorageBuilder().withId(0).withSize("100Gi").build())
-                        .endJbodStorage()
                         .withListeners(new GenericKafkaListenerBuilder().withName("tls").withPort(9093).withType(KafkaListenerType.INTERNAL).withTls().build())
                         .withConfig(Map.of("default.replication.factor", 2, "min.insync.replicas", 2))
                     .endKafka()
                 .endSpec()
                 .build();
+
+    private static final KafkaNodePool CONTROLLERS = new KafkaNodePoolBuilder()
+            .withNewMetadata()
+                .withName("controllers")
+                .withNamespace(NAMESPACE)
+            .endMetadata()
+            .withNewSpec()
+                .withReplicas(3)
+                .withRoles(ProcessRoles.CONTROLLER)
+                .withNewJbodStorage()
+                    .withVolumes(new PersistentClaimStorageBuilder().withId(0).withSize("100Gi").build())
+                .endJbodStorage()
+            .endSpec()
+            .build();
 
     private static final KafkaNodePool POOL_A = new KafkaNodePoolBuilder()
             .withNewMetadata()
@@ -89,8 +100,8 @@ public class KafkaSpecCheckerWithNodePoolsTest {
                 .endSpec()
                 .build();
 
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, List.of(POOL_A, POOL_B), Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, List.of(POOL_A, POOL_B), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
         KafkaSpecChecker checker = new KafkaSpecChecker(kafka.getSpec(), VERSIONS, kafkaCluster);
 
         List<Condition> warnings = checker.run(false);
@@ -124,8 +135,8 @@ public class KafkaSpecCheckerWithNodePoolsTest {
                 .endSpec()
                 .build();
 
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, List.of(poolA, poolB), Map.of(), Map.of(), true, SHARED_ENV_PROVIDER);
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, true, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, List.of(poolA, poolB), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
         KafkaSpecChecker checker = new KafkaSpecChecker(kafka.getSpec(), VERSIONS, kafkaCluster);
 
         List<Condition> warnings = checker.run(true);
@@ -143,8 +154,8 @@ public class KafkaSpecCheckerWithNodePoolsTest {
                 .endSpec()
                 .build();
 
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(poolA), Map.of(), Map.of(), true, SHARED_ENV_PROVIDER);
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, true, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(poolA), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
         KafkaSpecChecker checker = new KafkaSpecChecker(KAFKA.getSpec(), VERSIONS, kafkaCluster);
 
         List<Condition> warnings = checker.run(true);
@@ -163,8 +174,8 @@ public class KafkaSpecCheckerWithNodePoolsTest {
                 .endSpec()
                 .build();
 
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(poolA), Map.of(), Map.of(), true, SHARED_ENV_PROVIDER);
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, true, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(poolA), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
         KafkaSpecChecker checker = new KafkaSpecChecker(KAFKA.getSpec(), VERSIONS, kafkaCluster);
 
         List<Condition> warnings = checker.run(true);
@@ -191,8 +202,8 @@ public class KafkaSpecCheckerWithNodePoolsTest {
                 .endSpec()
                 .build();
 
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(poolA, poolB), Map.of(), Map.of(), true, SHARED_ENV_PROVIDER);
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, true, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(poolA, poolB), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
         KafkaSpecChecker checker = new KafkaSpecChecker(KAFKA.getSpec(), VERSIONS, kafkaCluster);
 
         List<Condition> warnings = checker.run(true);
@@ -201,5 +212,253 @@ public class KafkaSpecCheckerWithNodePoolsTest {
         assertThat(warnings, hasSize(1));
         assertThat(warnings.get(0).getReason(), is("KafkaStorage"));
         assertThat(warnings.get(0).getMessage(), is("A Kafka cluster with a single controller node and ephemeral storage will lose data after any restart or rolling update."));
+    }
+
+    @Test
+    public void testMetadataVersionIsOlderThanKafkaVersion() {
+        Kafka kafka = new KafkaBuilder(KAFKA)
+                .editSpec()
+                    .editKafka()
+                        .withVersion(KafkaVersionTestUtils.LATEST_KAFKA_VERSION)
+                        .withMetadataVersion(KafkaVersionTestUtils.PREVIOUS_METADATA_VERSION)
+                    .endKafka()
+                .endSpec()
+                .build();
+
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, List.of(CONTROLLERS, POOL_A, POOL_B), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, new KafkaVersionChange(VERSIONS.defaultVersion(), VERSIONS.defaultVersion(), null, null, KafkaVersionTestUtils.PREVIOUS_METADATA_VERSION), KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
+        KafkaSpecChecker checker = new KafkaSpecChecker(kafka.getSpec(), VERSIONS, kafkaCluster);
+
+        List<Condition> warnings = checker.run(true);
+
+        assertThat(warnings, hasSize(1));
+        assertThat(warnings.get(0).getReason(), is("KafkaMetadataVersion"));
+        assertThat(warnings.get(0).getMessage(), is("Metadata version is older than the Kafka version used by the cluster, which suggests that an upgrade is incomplete."));
+    }
+
+    @Test
+    public void testMetadataVersionMatchesKafkaVersion() {
+        Kafka kafka = new KafkaBuilder(KAFKA)
+                .editSpec()
+                    .editKafka()
+                        .withVersion(KafkaVersionTestUtils.LATEST_KAFKA_VERSION)
+                        .withMetadataVersion(KafkaVersionTestUtils.LATEST_METADATA_VERSION)
+                    .endKafka()
+                .endSpec()
+                .build();
+
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, List.of(CONTROLLERS, POOL_A, POOL_B), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, new KafkaVersionChange(VERSIONS.defaultVersion(), VERSIONS.defaultVersion(), null, null, KafkaVersionTestUtils.LATEST_METADATA_VERSION), KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
+        KafkaSpecChecker checker = new KafkaSpecChecker(kafka.getSpec(), VERSIONS, kafkaCluster);
+
+        List<Condition> warnings = checker.run(true);
+
+        assertThat(warnings, hasSize(0));
+    }
+
+    @Test
+    public void testUnusedConfigInKRaftBasedClusters() {
+        Kafka kafka = new KafkaBuilder(KAFKA)
+                .editSpec()
+                    .editKafka()
+                        .addToConfig(Map.of("inter.broker.protocol.version", "3.5", "log.message.format.version", "3.5"))
+                    .endKafka()
+                .endSpec()
+                .build();
+
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, List.of(CONTROLLERS, POOL_A, POOL_B), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
+        KafkaSpecChecker checker = new KafkaSpecChecker(kafka.getSpec(), VERSIONS, kafkaCluster);
+
+        List<Condition> warnings = checker.run(true);
+
+        assertThat(warnings, hasSize(2));
+        assertThat(warnings.get(0).getReason(), is("KafkaInterBrokerProtocolVersionInKRaft"));
+        assertThat(warnings.get(0).getMessage(), is("inter.broker.protocol.version is not used in KRaft-based Kafka clusters and should be removed from the Kafka custom resource."));
+        assertThat(warnings.get(1).getReason(), is("KafkaLogMessageFormatVersionInKRaft"));
+        assertThat(warnings.get(1).getMessage(), is("log.message.format.version is not used in KRaft-based Kafka clusters and should be removed from the Kafka custom resource."));
+    }
+
+    @Test
+    public void checkKRaftMetadataConfigInZooKeeperMode() {
+        // Kafka with Ephemeral storage
+        KafkaNodePool ephemeralPool = new KafkaNodePoolBuilder(POOL_B)
+                .editSpec()
+                    .withNewEphemeralStorage()
+                        .withKraftMetadata(KRaftMetadataStorage.SHARED)
+                    .endEphemeralStorage()
+                .endSpec()
+                .build();
+
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(POOL_A, ephemeralPool), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
+        KafkaSpecChecker checker = new KafkaSpecChecker(KAFKA.getSpec(), VERSIONS, kafkaCluster);
+
+        List<Condition> warnings = checker.run(false);
+        assertThat(warnings, hasSize(1));
+        assertThat(warnings.get(0).getReason(), is("KRaftMetadataStorageConfiguredWithoutKRaft"));
+        assertThat(warnings.get(0).getMessage(), is("The Kafka custom resource or one or more of the KafkaNodePool custom resources contain the kraftMetadata configuration. This configuration is supported only for KRaft-based Kafka clusters."));
+
+        // Kafka with Persistent storage
+        KafkaNodePool persistentPool = new KafkaNodePoolBuilder(POOL_B)
+                .editSpec()
+                    .withNewPersistentClaimStorage()
+                        .withSize("100Gi")
+                        .withKraftMetadata(KRaftMetadataStorage.SHARED)
+                    .endPersistentClaimStorage()
+                .endSpec()
+                .build();
+
+        pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(POOL_A, persistentPool), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
+        checker = new KafkaSpecChecker(KAFKA.getSpec(), VERSIONS, kafkaCluster);
+
+        warnings = checker.run(false);
+        assertThat(warnings, hasSize(1));
+        assertThat(warnings.get(0).getReason(), is("KRaftMetadataStorageConfiguredWithoutKRaft"));
+        assertThat(warnings.get(0).getMessage(), is("The Kafka custom resource or one or more of the KafkaNodePool custom resources contain the kraftMetadata configuration. This configuration is supported only for KRaft-based Kafka clusters."));
+
+        // Kafka with JBOD storage
+        KafkaNodePool jbodPool = new KafkaNodePoolBuilder(POOL_B)
+                .editSpec()
+                    .withNewJbodStorage()
+                        .addNewPersistentClaimStorageVolume()
+                            .withId(0)
+                            .withSize("100Gi")
+                        .endPersistentClaimStorageVolume()
+                        .addNewPersistentClaimStorageVolume()
+                            .withId(0)
+                            .withSize("100Gi")
+                            .withKraftMetadata(KRaftMetadataStorage.SHARED)
+                        .endPersistentClaimStorageVolume()
+                    .endJbodStorage()
+                .endSpec()
+                .build();
+
+        pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(POOL_A, jbodPool), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
+        checker = new KafkaSpecChecker(KAFKA.getSpec(), VERSIONS, kafkaCluster);
+
+        warnings = checker.run(false);
+        assertThat(warnings, hasSize(1));
+        assertThat(warnings.get(0).getReason(), is("KRaftMetadataStorageConfiguredWithoutKRaft"));
+        assertThat(warnings.get(0).getMessage(), is("The Kafka custom resource or one or more of the KafkaNodePool custom resources contain the kraftMetadata configuration. This configuration is supported only for KRaft-based Kafka clusters."));
+    }
+
+    @Test
+    public void checkKRaftMetadataConfigNotUsedInZooKeeperMode() {
+        // Kafka with Ephemeral storage
+        KafkaNodePool ephemeralPool = new KafkaNodePoolBuilder(POOL_B)
+                .editSpec()
+                    .withNewEphemeralStorage()
+                    .endEphemeralStorage()
+                .endSpec()
+                .build();
+
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(POOL_A, ephemeralPool), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
+        KafkaSpecChecker checker = new KafkaSpecChecker(KAFKA.getSpec(), VERSIONS, kafkaCluster);
+
+        List<Condition> warnings = checker.run(false);
+        assertThat(warnings, hasSize(0));
+
+        // Kafka with Persistent storage
+        KafkaNodePool persistentPool = new KafkaNodePoolBuilder(POOL_B)
+                .editSpec()
+                    .withNewPersistentClaimStorage()
+                        .withSize("100Gi")
+                    .endPersistentClaimStorage()
+                .endSpec()
+                .build();
+
+        pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(POOL_A, persistentPool), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
+        checker = new KafkaSpecChecker(KAFKA.getSpec(), VERSIONS, kafkaCluster);
+
+        warnings = checker.run(false);
+        assertThat(warnings, hasSize(0));
+
+        // Kafka with JBOD storage
+        KafkaNodePool jbodPool = new KafkaNodePoolBuilder(POOL_B)
+                .editSpec()
+                    .withNewJbodStorage()
+                        .addNewPersistentClaimStorageVolume()
+                            .withId(0)
+                            .withSize("100Gi")
+                        .endPersistentClaimStorageVolume()
+                        .addNewPersistentClaimStorageVolume()
+                            .withId(0)
+                            .withSize("100Gi")
+                        .endPersistentClaimStorageVolume()
+                    .endJbodStorage()
+                .endSpec()
+                .build();
+
+        pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(POOL_A, jbodPool), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
+        checker = new KafkaSpecChecker(KAFKA.getSpec(), VERSIONS, kafkaCluster);
+
+        warnings = checker.run(false);
+        assertThat(warnings, hasSize(0));
+    }
+
+    @Test
+    public void checkKRaftMetadataConfigInKRaftMode() {
+        // Kafka with Ephemeral storage
+        KafkaNodePool ephemeralPool = new KafkaNodePoolBuilder(POOL_B)
+                .editSpec()
+                    .withNewEphemeralStorage()
+                        .withKraftMetadata(KRaftMetadataStorage.SHARED)
+                    .endEphemeralStorage()
+                .endSpec()
+                .build();
+
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(CONTROLLERS, POOL_A, ephemeralPool), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
+        KafkaSpecChecker checker = new KafkaSpecChecker(KAFKA.getSpec(), VERSIONS, kafkaCluster);
+
+        List<Condition> warnings = checker.run(true);
+        assertThat(warnings, hasSize(0));
+
+        // Kafka with Persistent storage
+        KafkaNodePool persistentPool = new KafkaNodePoolBuilder(POOL_B)
+                .editSpec()
+                    .withNewPersistentClaimStorage()
+                        .withSize("100Gi")
+                        .withKraftMetadata(KRaftMetadataStorage.SHARED)
+                    .endPersistentClaimStorage()
+                .endSpec()
+                .build();
+
+        pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(CONTROLLERS, POOL_A, persistentPool), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
+        checker = new KafkaSpecChecker(KAFKA.getSpec(), VERSIONS, kafkaCluster);
+
+        warnings = checker.run(true);
+        assertThat(warnings, hasSize(0));
+
+        // Kafka with JBOD storage
+        KafkaNodePool jbodPool = new KafkaNodePoolBuilder(POOL_B)
+                .editSpec()
+                    .withNewJbodStorage()
+                        .addNewPersistentClaimStorageVolume()
+                            .withId(0)
+                            .withSize("100Gi")
+                        .endPersistentClaimStorageVolume()
+                        .addNewPersistentClaimStorageVolume()
+                            .withId(0)
+                            .withSize("100Gi")
+                            .withKraftMetadata(KRaftMetadataStorage.SHARED)
+                        .endPersistentClaimStorageVolume()
+                    .endJbodStorage()
+                .endSpec()
+                .build();
+
+        pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, List.of(CONTROLLERS, POOL_A, jbodPool), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, true, SHARED_ENV_PROVIDER);
+        kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE, KafkaMetadataConfigurationState.KRAFT, null, SHARED_ENV_PROVIDER);
+        checker = new KafkaSpecChecker(KAFKA.getSpec(), VERSIONS, kafkaCluster);
+
+        warnings = checker.run(true);
+        assertThat(warnings, hasSize(0));
     }
 }

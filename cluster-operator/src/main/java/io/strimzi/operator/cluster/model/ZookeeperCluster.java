@@ -21,19 +21,19 @@ import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicy;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicyIngressRule;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicyPeer;
 import io.fabric8.kubernetes.api.model.policy.v1.PodDisruptionBudget;
-import io.strimzi.api.kafka.model.JvmOptions;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaClusterSpec;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.StrimziPodSet;
-import io.strimzi.api.kafka.model.ZookeeperClusterSpec;
-import io.strimzi.api.kafka.model.status.Condition;
-import io.strimzi.api.kafka.model.storage.Storage;
-import io.strimzi.api.kafka.model.template.InternalServiceTemplate;
-import io.strimzi.api.kafka.model.template.PodDisruptionBudgetTemplate;
-import io.strimzi.api.kafka.model.template.PodTemplate;
-import io.strimzi.api.kafka.model.template.ResourceTemplate;
-import io.strimzi.api.kafka.model.template.ZookeeperClusterTemplate;
+import io.strimzi.api.kafka.model.common.Condition;
+import io.strimzi.api.kafka.model.common.JvmOptions;
+import io.strimzi.api.kafka.model.common.template.InternalServiceTemplate;
+import io.strimzi.api.kafka.model.common.template.PodDisruptionBudgetTemplate;
+import io.strimzi.api.kafka.model.common.template.PodTemplate;
+import io.strimzi.api.kafka.model.common.template.ResourceTemplate;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaClusterSpec;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.Storage;
+import io.strimzi.api.kafka.model.podset.StrimziPodSet;
+import io.strimzi.api.kafka.model.zookeeper.ZookeeperClusterSpec;
+import io.strimzi.api.kafka.model.zookeeper.ZookeeperClusterTemplate;
 import io.strimzi.certs.CertAndKey;
 import io.strimzi.operator.cluster.model.jmx.JmxModel;
 import io.strimzi.operator.cluster.model.jmx.SupportsJmx;
@@ -156,7 +156,7 @@ public class ZookeeperCluster extends AbstractModel implements SupportsMetrics, 
      * @param sharedEnvironmentProvider Shared environment provider
      */
     private ZookeeperCluster(Reconciliation reconciliation, HasMetadata resource, SharedEnvironmentProvider sharedEnvironmentProvider) {
-        super(reconciliation, resource, KafkaResources.zookeeperStatefulSetName(resource.getMetadata().getName()), COMPONENT_TYPE, sharedEnvironmentProvider);
+        super(reconciliation, resource, KafkaResources.zookeeperComponentName(resource.getMetadata().getName()), COMPONENT_TYPE, sharedEnvironmentProvider);
 
         this.image = null;
         this.isSnapshotCheckEnabled = DEFAULT_ZOOKEEPER_SNAPSHOT_CHECK_ENABLED;
@@ -337,7 +337,7 @@ public class ZookeeperCluster extends AbstractModel implements SupportsMetrics, 
         // Internal peers => Strimzi components which need access
         NetworkPolicyPeer clusterOperatorPeer = NetworkPolicyUtils.createPeer(Map.of(Labels.STRIMZI_KIND_LABEL, "cluster-operator"), NetworkPolicyUtils.clusterOperatorNamespaceSelector(namespace, operatorNamespace, operatorNamespaceLabels));
         NetworkPolicyPeer zookeeperClusterPeer = NetworkPolicyUtils.createPeer(labels.strimziSelectorLabels().toMap());
-        NetworkPolicyPeer kafkaClusterPeer = NetworkPolicyUtils.createPeer(Map.of(Labels.STRIMZI_NAME_LABEL, KafkaResources.kafkaStatefulSetName(cluster)));
+        NetworkPolicyPeer kafkaClusterPeer = NetworkPolicyUtils.createPeer(Map.of(Labels.STRIMZI_NAME_LABEL, KafkaResources.kafkaComponentName(cluster)));
         NetworkPolicyPeer entityOperatorPeer = NetworkPolicyUtils.createPeer(Map.of(Labels.STRIMZI_NAME_LABEL, KafkaResources.entityOperatorDeploymentName(cluster)));
 
         // List of network policy rules for all ports
@@ -437,38 +437,23 @@ public class ZookeeperCluster extends AbstractModel implements SupportsMetrics, 
      * based internal communication with Kafka. It contains both the public and private keys.
      *
      * @param clusterCa                         The CA for cluster certificates
+     * @param existingSecret                    The existing secret with ZooKeeper certificates
      * @param isMaintenanceTimeWindowsSatisfied Indicates whether we are in the maintenance window or not.
      *
      * @return The generated Secret with the ZooKeeper node certificates
      */
-    public Secret generateCertificatesSecret(ClusterCa clusterCa, boolean isMaintenanceTimeWindowsSatisfied) {
-        Map<String, String> secretData = new HashMap<>(replicas * 4);
+    public Secret generateCertificatesSecret(ClusterCa clusterCa, Secret existingSecret, boolean isMaintenanceTimeWindowsSatisfied) {
         Map<String, CertAndKey> certs;
 
         try {
-            certs = clusterCa.generateZkCerts(namespace, cluster, nodes(), isMaintenanceTimeWindowsSatisfied);
+            certs = clusterCa.generateZkCerts(namespace, cluster, existingSecret, nodes(), isMaintenanceTimeWindowsSatisfied);
         } catch (IOException e) {
             LOGGER.warnCr(reconciliation, "Error while generating certificates", e);
             throw new RuntimeException("Failed to prepare ZooKeeper certificates", e);
         }
 
-        for (int i = 0; i < replicas; i++) {
-            CertAndKey cert = certs.get(KafkaResources.zookeeperPodName(cluster, i));
-            secretData.put(KafkaResources.zookeeperPodName(cluster, i) + ".key", cert.keyAsBase64String());
-            secretData.put(KafkaResources.zookeeperPodName(cluster, i) + ".crt", cert.certAsBase64String());
-            secretData.put(KafkaResources.zookeeperPodName(cluster, i) + ".p12", cert.keyStoreAsBase64String());
-            secretData.put(KafkaResources.zookeeperPodName(cluster, i) + ".password", cert.storePasswordAsBase64String());
-        }
-
-        return ModelUtils.createSecret(
-                KafkaResources.zookeeperSecretName(cluster),
-                namespace,
-                labels,
-                ownerReference,
-                secretData,
-                Map.of(clusterCa.caCertGenerationAnnotation(), String.valueOf(clusterCa.certGeneration())),
-                emptyMap()
-        );
+        return ModelUtils.createSecret(KafkaResources.zookeeperSecretName(cluster), namespace, labels, ownerReference,
+                CertUtils.buildSecretData(certs), Map.ofEntries(clusterCa.caCertGenerationFullAnnotation()), emptyMap());
     }
 
     /* test */ Container createContainer(ImagePullPolicy imagePullPolicy) {

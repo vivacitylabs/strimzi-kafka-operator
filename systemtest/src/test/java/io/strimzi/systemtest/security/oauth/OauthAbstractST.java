@@ -5,45 +5,42 @@
 package io.strimzi.systemtest.security.oauth;
 
 import io.fabric8.kubernetes.api.model.batch.v1.Job;
-import io.strimzi.api.kafka.model.CertSecretSourceBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListener;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
+import io.strimzi.api.kafka.model.common.CertSecretSourceBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListener;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
 import io.strimzi.systemtest.AbstractST;
-import io.strimzi.systemtest.Constants;
 import io.strimzi.systemtest.Environment;
-import io.strimzi.systemtest.enums.DefaultNetworkPolicy;
+import io.strimzi.systemtest.TestConstants;
+import io.strimzi.systemtest.annotations.IPv6NotSupported;
 import io.strimzi.systemtest.keycloak.KeycloakInstance;
+import io.strimzi.systemtest.resources.NamespaceManager;
+import io.strimzi.systemtest.resources.ResourceManager;
 import io.strimzi.systemtest.resources.keycloak.SetupKeycloak;
-import io.strimzi.systemtest.templates.kubernetes.NetworkPolicyTemplates;
 import io.strimzi.systemtest.templates.specific.ScraperTemplates;
-import io.strimzi.systemtest.utils.StUtils;
 import io.strimzi.systemtest.utils.kubeUtils.controllers.JobUtils;
 import io.strimzi.systemtest.utils.kubeUtils.objects.SecretUtils;
-import io.strimzi.test.logs.CollectorElement;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.hamcrest.CoreMatchers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.extension.ExtensionContext;
 
-import java.util.List;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
-import static io.strimzi.systemtest.Constants.ARM64_UNSUPPORTED;
-import static io.strimzi.systemtest.Constants.OAUTH;
-import static io.strimzi.systemtest.Constants.REGRESSION;
-
+import static io.strimzi.systemtest.TestConstants.ARM64_UNSUPPORTED;
+import static io.strimzi.systemtest.TestConstants.OAUTH;
+import static io.strimzi.systemtest.TestConstants.REGRESSION;
 import static io.strimzi.test.k8s.KubeClusterResource.kubeClient;
 import static org.hamcrest.MatcherAssert.assertThat;
 
 @Tag(OAUTH)
 @Tag(REGRESSION)
 @Tag(ARM64_UNSUPPORTED)
+@IPv6NotSupported("Keycloak does not support IPv6 single-stack - https://github.com/keycloak/keycloak/issues/21277")
 public class OauthAbstractST extends AbstractST {
 
     protected static final Logger LOGGER = LogManager.getLogger(OauthAbstractST.class);
@@ -106,7 +103,7 @@ public class OauthAbstractST extends AbstractST {
 
     protected static final Function<KeycloakInstance, GenericKafkaListener> BUILD_OAUTH_TLS_LISTENER = (keycloakInstance) -> {
         return new GenericKafkaListenerBuilder()
-            .withName(Constants.TLS_LISTENER_DEFAULT_NAME)
+            .withName(TestConstants.TLS_LISTENER_DEFAULT_NAME)
             .withPort(9093)
             .withType(KafkaListenerType.INTERNAL)
             .withTls(true)
@@ -126,11 +123,10 @@ public class OauthAbstractST extends AbstractST {
             .build();
     };
 
-    protected void setupCoAndKeycloak(ExtensionContext extensionContext, String keycloakNamespace) {
-        clusterOperator.defaultInstallation(extensionContext).createInstallation().runInstallation();
+    protected void setupCoAndKeycloak(String keycloakNamespace) {
+        clusterOperator.defaultInstallation().createInstallation().runInstallation();
 
-        resourceManager.createResourceWithWait(extensionContext, NetworkPolicyTemplates.applyDefaultNetworkPolicy(extensionContext, keycloakNamespace, DefaultNetworkPolicy.DEFAULT_TO_ALLOW));
-        resourceManager.createResourceWithoutWait(extensionContext, ScraperTemplates.scraperPod(Environment.TEST_SUITE_NAMESPACE, Constants.SCRAPER_NAME).build());
+        resourceManager.createResourceWithoutWait(ScraperTemplates.scraperPod(Environment.TEST_SUITE_NAMESPACE, TestConstants.SCRAPER_NAME).build());
 
         LOGGER.info("Deploying keycloak");
 
@@ -138,24 +134,23 @@ public class OauthAbstractST extends AbstractST {
         // Keycloak do not support cluster-wide namespace, and thus we need it to deploy in non-OLM cluster wide namespace
         // (f.e., our `infra-namespace`)
         if (kubeClient().getNamespace(Environment.TEST_SUITE_NAMESPACE) == null) {
-            cluster.createNamespace(CollectorElement.createCollectorElement(extensionContext.getRequiredTestClass().getName()), Environment.TEST_SUITE_NAMESPACE);
-            StUtils.copyImagePullSecrets(Environment.TEST_SUITE_NAMESPACE);
+            NamespaceManager.getInstance().createNamespaceAndPrepare(Environment.TEST_SUITE_NAMESPACE);
         }
 
-        SetupKeycloak.deployKeycloakOperator(extensionContext, Environment.TEST_SUITE_NAMESPACE, keycloakNamespace);
+        SetupKeycloak.deployKeycloakOperator(Environment.TEST_SUITE_NAMESPACE, keycloakNamespace);
 
-        keycloakInstance = SetupKeycloak.deployKeycloakAndImportRealms(extensionContext, keycloakNamespace);
+        keycloakInstance = SetupKeycloak.deployKeycloakAndImportRealms(keycloakNamespace);
 
         createSecretsForDeployments(keycloakNamespace);
     }
 
     @AfterEach
-    void tearDownEach(ExtensionContext extensionContext) throws Exception {
+    void tearDownEach() {
         List<Job> clusterJobList = kubeClient().getJobList().getItems()
             .stream()
             .filter(
-                job -> job.getMetadata().getName().contains(storageMap.get(extensionContext).getClusterName()))
-            .collect(Collectors.toList());
+                job -> job.getMetadata().getName().contains(storageMap.get(ResourceManager.getTestContext()).getClusterName()))
+            .toList();
 
         for (Job job : clusterJobList) {
             LOGGER.info("Deleting Job: {}/{} ", job.getMetadata().getNamespace(), job.getMetadata().getName());

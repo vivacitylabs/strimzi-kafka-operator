@@ -5,8 +5,8 @@
 package io.strimzi.operator.cluster.model;
 
 import io.fabric8.kubernetes.api.model.Container;
-import io.fabric8.kubernetes.api.model.IntOrString;
 import io.fabric8.kubernetes.api.model.EnvVar;
+import io.fabric8.kubernetes.api.model.IntOrString;
 import io.fabric8.kubernetes.api.model.LabelSelectorBuilder;
 import io.fabric8.kubernetes.api.model.LocalObjectReference;
 import io.fabric8.kubernetes.api.model.PodSecurityContextBuilder;
@@ -27,33 +27,29 @@ import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicyPeer;
 import io.fabric8.kubernetes.api.model.rbac.PolicyRule;
 import io.fabric8.kubernetes.api.model.rbac.PolicyRuleBuilder;
 import io.fabric8.kubernetes.api.model.rbac.Role;
-import io.strimzi.api.kafka.model.Constants;
-import io.strimzi.api.kafka.model.ContainerEnvVar;
-import io.strimzi.api.kafka.model.EntityOperatorSpec;
-import io.strimzi.api.kafka.model.EntityOperatorSpecBuilder;
-import io.strimzi.api.kafka.model.EntityTopicOperatorSpec;
-import io.strimzi.api.kafka.model.EntityTopicOperatorSpecBuilder;
-import io.strimzi.api.kafka.model.EntityUserOperatorSpec;
-import io.strimzi.api.kafka.model.EntityUserOperatorSpecBuilder;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBuilder;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.ProbeBuilder;
-import io.strimzi.api.kafka.model.TlsSidecar;
-import io.strimzi.api.kafka.model.TlsSidecarBuilder;
-import io.strimzi.api.kafka.model.TlsSidecarLogLevel;
-import io.strimzi.api.kafka.model.template.ContainerTemplate;
-import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
+import io.strimzi.api.kafka.model.common.Constants;
+import io.strimzi.api.kafka.model.common.ContainerEnvVar;
+import io.strimzi.api.kafka.model.common.template.ContainerTemplate;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.entityoperator.EntityOperatorSpec;
+import io.strimzi.api.kafka.model.kafka.entityoperator.EntityOperatorSpecBuilder;
+import io.strimzi.api.kafka.model.kafka.entityoperator.EntityTopicOperatorSpec;
+import io.strimzi.api.kafka.model.kafka.entityoperator.EntityTopicOperatorSpecBuilder;
+import io.strimzi.api.kafka.model.kafka.entityoperator.EntityUserOperatorSpec;
+import io.strimzi.api.kafka.model.kafka.entityoperator.EntityUserOperatorSpecBuilder;
+import io.strimzi.operator.cluster.ClusterOperatorConfig;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
 import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.Labels;
-import io.strimzi.platform.KubernetesVersion;
-import io.strimzi.plugin.security.profiles.impl.RestrictedPodSecurityProvider;
 import io.strimzi.test.TestUtils;
 import io.strimzi.test.annotations.ParallelSuite;
 import io.strimzi.test.annotations.ParallelTest;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -62,7 +58,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import static io.strimzi.test.TestUtils.map;
 import static java.util.Collections.singletonList;
 import static java.util.Collections.singletonMap;
 import static org.hamcrest.CoreMatchers.equalTo;
@@ -75,7 +70,7 @@ import static org.hamcrest.Matchers.allOf;
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasProperty;
 
-@SuppressWarnings({"checkstyle:ClassDataAbstractionCoupling"})
+@SuppressWarnings({"checkstyle:ClassDataAbstractionCoupling", "checkstyle:ClassFanOutComplexity"})
 @ParallelSuite
 public class EntityOperatorTest {
     private static final KafkaVersion.Lookup VERSIONS = KafkaVersionTestUtils.getKafkaVersionLookup();
@@ -91,20 +86,13 @@ public class EntityOperatorTest {
     private final String image = "my-image:latest";
     private final int healthDelay = 120;
     private final int healthTimeout = 30;
-    private final int tlsHealthDelay = 120;
-    private final int tlsHealthTimeout = 30;
 
     private final EntityUserOperatorSpec entityUserOperatorSpec = new EntityUserOperatorSpecBuilder()
             .build();
     private final EntityTopicOperatorSpec entityTopicOperatorSpec = new EntityTopicOperatorSpecBuilder()
             .build();
-    private final TlsSidecar tlsSidecar = new TlsSidecarBuilder()
-            .withLivenessProbe(new ProbeBuilder().withInitialDelaySeconds(tlsHealthDelay).withTimeoutSeconds(tlsHealthTimeout).build())
-            .withReadinessProbe(new ProbeBuilder().withInitialDelaySeconds(tlsHealthDelay).withTimeoutSeconds(tlsHealthTimeout).build())
-            .build();
 
     private final EntityOperatorSpec entityOperatorSpec = new EntityOperatorSpecBuilder()
-            .withTlsSidecar(tlsSidecar)
             .withTopicOperator(entityTopicOperatorSpec)
             .withUserOperator(entityUserOperatorSpec)
             .withNewTemplate()
@@ -121,21 +109,13 @@ public class EntityOperatorTest {
                     .endSpec()
                     .build();
 
-    private final EntityOperator entityOperator = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
-
-    @ParallelTest
-    public void testGenerateDeploymentWithBto() {
-        testGenerateDeployment(false);
-    }
-
-    @ParallelTest
-    public void testGenerateDeploymentWithUto() {
-        testGenerateDeployment(true);
-    }
-
-    private void testGenerateDeployment(boolean useUnidirectionalTopicOperator) {
-        entityOperator.unidirectionalTopicOperator = useUnidirectionalTopicOperator;
-        Deployment dep = entityOperator.generateDeployment(true, null, null);
+    private final EntityOperator entityOperator = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
+    
+    @ParameterizedTest
+    @ValueSource(booleans = { true, false })
+    public void testGenerateDeployment(boolean cruiseControlEnabled) {
+        entityOperator.cruiseControlEnabled = cruiseControlEnabled;
+        Deployment dep = entityOperator.generateDeployment(Map.of(), true, null, null);
 
         List<Container> containers = dep.getSpec().getTemplate().getSpec().getContainers();
 
@@ -144,35 +124,18 @@ public class EntityOperatorTest {
         assertThat(dep.getSpec().getReplicas(), is(1));
         TestUtils.checkOwnerReference(dep, resource);
 
-        assertThat(containers.size(), is(useUnidirectionalTopicOperator ? 2 : 3));
+        assertThat(containers.size(), is(2));
         // just check names of topic and user operators (their containers are tested in the related unit test classes)
         assertThat(containers.get(0).getName(), is(EntityTopicOperator.TOPIC_OPERATOR_CONTAINER_NAME));
         assertThat(containers.get(1).getName(), is(EntityUserOperator.USER_OPERATOR_CONTAINER_NAME));
-        // checks on the TLS sidecar container
-        if (!useUnidirectionalTopicOperator) {
-            Container tlsSidecarContainer = containers.get(2);
-            assertThat(tlsSidecarContainer.getImage(), is(image));
-            assertThat(io.strimzi.operator.cluster.TestUtils.containerEnvVars(tlsSidecarContainer).get(EntityOperator.ENV_VAR_ZOOKEEPER_CONNECT), is(KafkaResources.zookeeperServiceName(cluster) + ":" + ZookeeperCluster.CLIENT_TLS_PORT));
-            assertThat(io.strimzi.operator.cluster.TestUtils.containerEnvVars(tlsSidecarContainer).get(ModelUtils.TLS_SIDECAR_LOG_LEVEL), is(TlsSidecarLogLevel.NOTICE.toValue()));
-            assertThat(EntityOperatorTest.volumeMounts(tlsSidecarContainer.getVolumeMounts()), is(map(
-                    EntityOperator.TLS_SIDECAR_TMP_DIRECTORY_DEFAULT_VOLUME_NAME, VolumeUtils.STRIMZI_TMP_DIRECTORY_DEFAULT_MOUNT_PATH,
-                    EntityOperator.TLS_SIDECAR_CA_CERTS_VOLUME_NAME, EntityOperator.TLS_SIDECAR_CA_CERTS_VOLUME_MOUNT,
-                    EntityOperator.ETO_CERTS_VOLUME_NAME, EntityOperator.ETO_CERTS_VOLUME_MOUNT)));
-            assertThat(tlsSidecarContainer.getReadinessProbe().getInitialDelaySeconds(), is(tlsHealthDelay));
-            assertThat(tlsSidecarContainer.getReadinessProbe().getTimeoutSeconds(), is(tlsHealthTimeout));
-            assertThat(tlsSidecarContainer.getLivenessProbe().getInitialDelaySeconds(), is(tlsHealthDelay));
-            assertThat(tlsSidecarContainer.getLivenessProbe().getTimeoutSeconds(), is(tlsHealthTimeout));
-        }
 
         List<Volume> volumes = dep.getSpec().getTemplate().getSpec().getVolumes();
         assertThat(volumes.stream().filter(volume -> volume.getName().equals(EntityUserOperator.USER_OPERATOR_TMP_DIRECTORY_DEFAULT_VOLUME_NAME)).findFirst().orElseThrow().getEmptyDir().getSizeLimit(), is(new Quantity("100", "Mi")));
         assertThat(volumes.stream().filter(volume -> volume.getName().equals(EntityTopicOperator.TOPIC_OPERATOR_TMP_DIRECTORY_DEFAULT_VOLUME_NAME)).findFirst().orElseThrow().getEmptyDir().getSizeLimit(), is(new Quantity("100", "Mi")));
         assertThat(volumes.stream().filter(volume -> volume.getName().equals(EntityOperator.TLS_SIDECAR_CA_CERTS_VOLUME_NAME)).findFirst().isEmpty(), is(false));
-        if (!useUnidirectionalTopicOperator) {
-            assertThat(volumes.stream().filter(volume -> volume.getName().equals(EntityOperator.TLS_SIDECAR_TMP_DIRECTORY_DEFAULT_VOLUME_NAME)).findFirst().orElseThrow().getEmptyDir().getSizeLimit(), is(new Quantity("100", "Mi")));
-        } else {
-            assertThat(volumes.stream().filter(volume -> volume.getName().equals(EntityOperator.TLS_SIDECAR_TMP_DIRECTORY_DEFAULT_VOLUME_NAME)).findFirst().isEmpty(), is(true));
-
+        
+        if (cruiseControlEnabled) {
+            assertThat(volumes.stream().filter(volume -> volume.getName().equals(EntityOperator.ETO_CC_API_VOLUME_NAME)).findFirst().isEmpty(), is(false));
         }
     }
 
@@ -180,7 +143,6 @@ public class EntityOperatorTest {
     public void testFromCrd() {
         assertThat(entityOperator.namespace, is(namespace));
         assertThat(entityOperator.cluster, is(cluster));
-        assertThat(entityOperator.zookeeperConnect, is(KafkaResources.zookeeperServiceName(cluster) + ":" + ZookeeperCluster.CLIENT_TLS_PORT));
     }
 
     @ParallelTest
@@ -192,7 +154,7 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator entityOperator = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator entityOperator = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
         assertThat(entityOperator, is(nullValue()));
     }
@@ -209,7 +171,7 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator entityOperator = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator entityOperator = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
         assertThat(entityOperator.topicOperator(), is(nullValue()));
         assertThat(entityOperator.userOperator(), is(notNullValue()));
@@ -227,7 +189,7 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator entityOperator = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator entityOperator = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
         assertThat(entityOperator.topicOperator(), is(notNullValue()));
         assertThat(entityOperator.userOperator(), is(nullValue()));
@@ -235,9 +197,9 @@ public class EntityOperatorTest {
 
     @ParallelTest
     public void withAffinityAndTolerations() throws IOException {
-        ResourceTester<Kafka, EntityOperator> helper = new ResourceTester<>(Kafka.class, VERSIONS, (kAssembly, versions) -> EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), kAssembly, versions, SHARED_ENV_PROVIDER), this.getClass().getSimpleName() + ".withAffinityAndTolerations");
-        helper.assertDesiredModel("-DeploymentAffinity.yaml", zc -> zc.generateDeployment(true, null, null).getSpec().getTemplate().getSpec().getAffinity());
-        helper.assertDesiredModel("-DeploymentTolerations.yaml", zc -> zc.generateDeployment(true, null, null).getSpec().getTemplate().getSpec().getTolerations());
+        ResourceTester<Kafka, EntityOperator> helper = new ResourceTester<>(Kafka.class, VERSIONS, (kAssembly, versions) -> EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), kAssembly, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig()), this.getClass().getSimpleName() + ".withAffinityAndTolerations");
+        helper.assertDesiredModel("-DeploymentAffinity.yaml", zc -> zc.generateDeployment(Map.of(), true, null, null).getSpec().getTemplate().getSpec().getAffinity());
+        helper.assertDesiredModel("-DeploymentTolerations.yaml", zc -> zc.generateDeployment(Map.of(), true, null, null).getSpec().getTemplate().getSpec().getTolerations());
     }
 
     @ParallelTest
@@ -257,9 +219,6 @@ public class EntityOperatorTest {
 
         Map<String, String> rLabels = TestUtils.map("l7", "v7", "l8", "v8");
         Map<String, String> rAnots = TestUtils.map("a7", "v7", "a8", "v8");
-
-        Map<String, String> rbLabels = TestUtils.map("l9", "v9", "l10", "v10");
-        Map<String, String> rbAnots = TestUtils.map("a9", "v9", "a10", "v10");
 
         Toleration toleration = new TolerationBuilder()
                 .withEffect("NoSchedule")
@@ -326,10 +285,10 @@ public class EntityOperatorTest {
                         .endSpec()
                         .build();
 
-        EntityOperator entityOperator = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator entityOperator = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
         // Check Deployment
-        Deployment dep = entityOperator.generateDeployment(true, null, null);
+        Deployment dep = entityOperator.generateDeployment(Map.of(), true, null, null);
         assertThat(dep.getMetadata().getLabels().entrySet().containsAll(expectedDepLabels.entrySet()), is(true));
         assertThat(dep.getMetadata().getAnnotations().entrySet().containsAll(depAnnotations.entrySet()), is(true));
         assertThat(dep.getSpec().getTemplate().getSpec().getPriorityClassName(), is("top-priority"));
@@ -369,12 +328,10 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
-        Deployment dep = eo.generateDeployment(true, null, null);
+        Deployment dep = eo.generateDeployment(Map.of(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getTerminationGracePeriodSeconds(), is(123L));
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(2).getLifecycle(), is(notNullValue()));
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(2).getLifecycle().getPreStop().getExec().getCommand().contains("/opt/stunnel/entity_operator_stunnel_pre_stop.sh"), is(true));
     }
 
     @ParallelTest
@@ -388,12 +345,10 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
-        Deployment dep = eo.generateDeployment(true, null, null);
+        Deployment dep = eo.generateDeployment(Map.of(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getTerminationGracePeriodSeconds(), is(30L));
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(2).getLifecycle(), is(notNullValue()));
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(2).getLifecycle().getPreStop().getExec().getCommand().contains("/opt/stunnel/entity_operator_stunnel_pre_stop.sh"), is(true));
     }
 
     @ParallelTest
@@ -415,9 +370,9 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
-        Deployment dep = eo.generateDeployment(true, null, null);
+        Deployment dep = eo.generateDeployment(Map.of(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().size(), is(2));
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().contains(secret1), is(true));
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().contains(secret2), is(true));
@@ -441,9 +396,9 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
-        Deployment dep = eo.generateDeployment(true, null, secrets);
+        Deployment dep = eo.generateDeployment(Map.of(), true, null, secrets);
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().size(), is(2));
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().contains(secret1), is(true));
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().contains(secret2), is(true));
@@ -468,9 +423,9 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
-        Deployment dep = eo.generateDeployment(true, null, singletonList(secret1));
+        Deployment dep = eo.generateDeployment(Map.of(), true, null, singletonList(secret1));
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().size(), is(1));
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().contains(secret1), is(false));
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets().contains(secret2), is(true));
@@ -487,9 +442,9 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
-        Deployment dep = eo.generateDeployment(true, null, null);
+        Deployment dep = eo.generateDeployment(Map.of(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getImagePullSecrets(), is(nullValue()));
     }
 
@@ -509,9 +464,9 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
-        Deployment dep = eo.generateDeployment(true, null, null);
+        Deployment dep = eo.generateDeployment(Map.of(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getSecurityContext(), is(notNullValue()));
         assertThat(dep.getSpec().getTemplate().getSpec().getSecurityContext().getFsGroup(), is(123L));
         assertThat(dep.getSpec().getTemplate().getSpec().getSecurityContext().getRunAsGroup(), is(456L));
@@ -529,95 +484,10 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
-        Deployment dep = eo.generateDeployment(true, null, null);
+        Deployment dep = eo.generateDeployment(Map.of(), true, null, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getSecurityContext(), is(nullValue()));
-    }
-
-    @ParallelTest
-    public void testRestrictedSecurityContext() {
-        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
-        eo.securityProvider = new RestrictedPodSecurityProvider();
-        eo.securityProvider.configure(new PlatformFeaturesAvailability(false, KubernetesVersion.MINIMAL_SUPPORTED_VERSION));
-
-        Deployment dep = eo.generateDeployment(true, null, null);
-        assertThat(dep.getSpec().getTemplate().getSpec().getSecurityContext(), is(nullValue()));
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(2).getSecurityContext().getAllowPrivilegeEscalation(), is(false));
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(2).getSecurityContext().getRunAsNonRoot(), is(true));
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(2).getSecurityContext().getSeccompProfile().getType(), is("RuntimeDefault"));
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(2).getSecurityContext().getCapabilities().getDrop(), is(List.of("ALL")));
-    }
-
-    /**
-     * Verify the lookup order is:<ul>
-     * <li>Kafka.spec.entityOperator.tlsSidecar.image</li>
-     * <li>Kafka.spec.kafka.image</li>
-     * <li>image for default version of Kafka</li></ul>
-     */
-    @ParallelTest
-    public void testStunnelImage() {
-        Kafka kafka = new KafkaBuilder(resource)
-                .editSpec()
-                    .editEntityOperator()
-                        .editOrNewTlsSidecar()
-                            .withImage("foo1")
-                        .endTlsSidecar()
-                    .endEntityOperator()
-                    .editKafka()
-                        .withImage("foo2")
-                    .endKafka()
-                .endSpec()
-                .build();
-
-        assertThat(EntityOperator.fromCrd(new Reconciliation("test", kafka.getKind(), kafka.getMetadata().getNamespace(), kafka.getMetadata().getName()), kafka, VERSIONS, SHARED_ENV_PROVIDER).createContainers(ImagePullPolicy.ALWAYS).get(2).getImage(), is("foo1"));
-
-        kafka = new KafkaBuilder(resource)
-                .editSpec()
-                    .editEntityOperator()
-                        .editOrNewTlsSidecar()
-                            .withImage(null)
-                        .endTlsSidecar()
-                    .endEntityOperator()
-                    .editKafka()
-                        .withImage("foo2")
-                    .endKafka()
-                .endSpec()
-                .build();
-
-        assertThat(EntityOperator.fromCrd(new Reconciliation("test", kafka.getKind(), kafka.getMetadata().getNamespace(), kafka.getMetadata().getName()), kafka, VERSIONS, SHARED_ENV_PROVIDER).createContainers(ImagePullPolicy.ALWAYS).get(2).getImage(), is("foo2"));
-
-        kafka = new KafkaBuilder(resource)
-                .editSpec()
-                    .editEntityOperator()
-                        .editOrNewTlsSidecar()
-                            .withImage(null)
-                        .endTlsSidecar()
-                    .endEntityOperator()
-                    .editKafka()
-                        .withVersion(KafkaVersionTestUtils.PREVIOUS_KAFKA_VERSION)
-                        .withImage(null)
-                    .endKafka()
-                .endSpec()
-            .build();
-
-        assertThat(EntityOperator.fromCrd(new Reconciliation("test", kafka.getKind(), kafka.getMetadata().getNamespace(), kafka.getMetadata().getName()), kafka, VERSIONS, SHARED_ENV_PROVIDER).createContainers(ImagePullPolicy.ALWAYS).get(2).getImage(), is(KafkaVersionTestUtils.DEFAULT_KAFKA_IMAGE));
-
-        kafka = new KafkaBuilder(resource)
-                .editSpec()
-                    .editEntityOperator()
-                        .editOrNewTlsSidecar()
-                            .withImage(null)
-                        .endTlsSidecar()
-                    .endEntityOperator()
-                    .editKafka()
-                        .withVersion(KafkaVersionTestUtils.LATEST_KAFKA_VERSION)
-                        .withImage(null)
-                    .endKafka()
-                .endSpec()
-            .build();
-
-        assertThat(EntityOperator.fromCrd(new Reconciliation("test", kafka.getKind(), kafka.getMetadata().getNamespace(), kafka.getMetadata().getName()), kafka, VERSIONS, SHARED_ENV_PROVIDER).createContainers(ImagePullPolicy.ALWAYS).get(2).getImage(), is(KafkaVersionTestUtils.DEFAULT_KAFKA_IMAGE));
     }
 
     @ParallelTest
@@ -631,17 +501,15 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
-        Deployment dep = eo.generateDeployment(true, ImagePullPolicy.ALWAYS, null);
+        Deployment dep = eo.generateDeployment(Map.of(), true, ImagePullPolicy.ALWAYS, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getImagePullPolicy(), is(ImagePullPolicy.ALWAYS.toString()));
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(1).getImagePullPolicy(), is(ImagePullPolicy.ALWAYS.toString()));
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(2).getImagePullPolicy(), is(ImagePullPolicy.ALWAYS.toString()));
 
-        dep = eo.generateDeployment(true, ImagePullPolicy.IFNOTPRESENT, null);
+        dep = eo.generateDeployment(Map.of(), true, ImagePullPolicy.IFNOTPRESENT, null);
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getImagePullPolicy(), is(ImagePullPolicy.IFNOTPRESENT.toString()));
         assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(1).getImagePullPolicy(), is(ImagePullPolicy.IFNOTPRESENT.toString()));
-        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(2).getImagePullPolicy(), is(ImagePullPolicy.IFNOTPRESENT.toString()));
     }
 
     @AfterAll
@@ -684,7 +552,7 @@ public class EntityOperatorTest {
                         .endSpec()
                         .build();
 
-        List<EnvVar> containerEnvVars = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER).topicOperator().getEnvVars();
+        List<EnvVar> containerEnvVars = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig()).topicOperator().getEnvVars();
 
         assertThat("Failed to correctly set container environment variable: " + testEnvOneKey,
                 containerEnvVars.stream().filter(env -> testEnvOneKey.equals(env.getName()))
@@ -729,7 +597,7 @@ public class EntityOperatorTest {
                         .endSpec()
                         .build();
 
-        List<EnvVar> containerEnvVars = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER).topicOperator().getEnvVars();
+        List<EnvVar> containerEnvVars = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig()).topicOperator().getEnvVars();
 
         assertThat("Failed to prevent over writing existing container environment variable: " + testEnvOneKey,
                 containerEnvVars.stream().filter(env -> testEnvOneKey.equals(env.getName()))
@@ -775,7 +643,7 @@ public class EntityOperatorTest {
                         .endSpec()
                         .build();
 
-        List<EnvVar> containerEnvVars = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER).userOperator().getEnvVars();
+        List<EnvVar> containerEnvVars = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig()).userOperator().getEnvVars();
 
         assertThat("Failed to correctly set container environment variable: " + testEnvOneKey,
                 containerEnvVars.stream().filter(env -> testEnvOneKey.equals(env.getName()))
@@ -788,21 +656,14 @@ public class EntityOperatorTest {
 
     @ParallelTest
     public void testUserOperatorContainerEnvVarsConflict() {
-        ContainerEnvVar envVar1 = new ContainerEnvVar();
-        String testEnvOneKey = EntityUserOperator.ENV_VAR_FULL_RECONCILIATION_INTERVAL_MS;
-        String testEnvOneValue = "test.env.one";
-        envVar1.setName(testEnvOneKey);
-        envVar1.setValue(testEnvOneValue);
-
-        ContainerEnvVar envVar2 = new ContainerEnvVar();
+        ContainerEnvVar envVar = new ContainerEnvVar();
         String testEnvTwoKey = EntityUserOperator.ENV_VAR_KAFKA_BOOTSTRAP_SERVERS;
         String testEnvTwoValue = "test.env.two";
-        envVar2.setName(testEnvTwoKey);
-        envVar2.setValue(testEnvTwoValue);
+        envVar.setName(testEnvTwoKey);
+        envVar.setValue(testEnvTwoValue);
 
         List<ContainerEnvVar> testEnvs = new ArrayList<>();
-        testEnvs.add(envVar1);
-        testEnvs.add(envVar2);
+        testEnvs.add(envVar);
         ContainerTemplate userOperatorContainer = new ContainerTemplate();
         userOperatorContainer.setEnv(testEnvs);
 
@@ -819,93 +680,12 @@ public class EntityOperatorTest {
                         .endSpec()
                         .build();
 
-        List<EnvVar> containerEnvVars = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER).userOperator().getEnvVars();
-
-        assertThat("Failed to prevent over writing existing container environment variable: " + testEnvOneKey,
-                containerEnvVars.stream().filter(env -> testEnvOneKey.equals(env.getName()))
-                        .map(EnvVar::getValue).findFirst().orElse("").equals(testEnvOneValue), is(false));
+        List<EnvVar> containerEnvVars = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), 
+            resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig()).userOperator().getEnvVars();
+        
         assertThat("Failed to prevent over writing existing container environment variable: " + testEnvTwoKey,
                 containerEnvVars.stream().filter(env -> testEnvTwoKey.equals(env.getName()))
                         .map(EnvVar::getValue).findFirst().orElse("").equals(testEnvTwoValue), is(false));
-    }
-
-    @ParallelTest
-    public void testTlsSideCarContainerEnvVars() {
-
-        ContainerEnvVar envVar1 = new ContainerEnvVar();
-        String testEnvOneKey = "TEST_ENV_1";
-        String testEnvOneValue = "test.env.one";
-        envVar1.setName(testEnvOneKey);
-        envVar1.setValue(testEnvOneValue);
-
-        ContainerEnvVar envVar2 = new ContainerEnvVar();
-        String testEnvTwoKey = "TEST_ENV_2";
-        String testEnvTwoValue = "test.env.two";
-        envVar2.setName(testEnvTwoKey);
-        envVar2.setValue(testEnvTwoValue);
-
-        List<ContainerEnvVar> testEnvs = new ArrayList<>();
-        testEnvs.add(envVar1);
-        testEnvs.add(envVar2);
-        ContainerTemplate tlsContainer = new ContainerTemplate();
-        tlsContainer.setEnv(testEnvs);
-
-        Kafka resource =
-                new KafkaBuilder(ResourceUtils.createKafka(namespace, cluster, replicas, image, healthDelay, healthTimeout))
-                        .editSpec()
-                        .withNewEntityOperator()
-                        .withTopicOperator(entityTopicOperatorSpec)
-                        .withUserOperator(entityUserOperatorSpec)
-                        .withNewTemplate()
-                        .withTlsSidecarContainer(tlsContainer)
-                        .endTemplate()
-                        .endEntityOperator()
-                        .endSpec()
-                        .build();
-
-        List<EnvVar> containerEnvVars = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER).getTlsSidecarEnvVars();
-
-        assertThat("Failed to correctly set container environment variable: " + testEnvOneKey,
-                containerEnvVars.stream().filter(env -> testEnvOneKey.equals(env.getName()))
-                        .map(EnvVar::getValue).findFirst().orElse("").equals(testEnvOneValue), is(true));
-        assertThat("Failed to correctly set container environment variable: " + testEnvTwoKey,
-                containerEnvVars.stream().filter(env -> testEnvTwoKey.equals(env.getName()))
-                        .map(EnvVar::getValue).findFirst().orElse("").equals(testEnvTwoValue), is(true));
-
-    }
-
-    @ParallelTest
-    public void testTlsSidecarContainerEnvVarsConflict() {
-
-        ContainerEnvVar envVar1 = new ContainerEnvVar();
-        String testEnvOneKey = EntityOperator.ENV_VAR_ZOOKEEPER_CONNECT;
-        String testEnvOneValue = "test.env.one";
-        envVar1.setName(testEnvOneKey);
-        envVar1.setValue(testEnvOneValue);
-
-        List<ContainerEnvVar> testEnvs = new ArrayList<>();
-        testEnvs.add(envVar1);
-        ContainerTemplate tlsContainer = new ContainerTemplate();
-        tlsContainer.setEnv(testEnvs);
-
-        Kafka resource =
-                new KafkaBuilder(ResourceUtils.createKafka(namespace, cluster, replicas, image, healthDelay, healthTimeout))
-                        .editSpec()
-                            .withNewEntityOperator()
-                                .withTopicOperator(entityTopicOperatorSpec)
-                                .withUserOperator(entityUserOperatorSpec)
-                                .withNewTemplate()
-                                    .withTlsSidecarContainer(tlsContainer)
-                                .endTemplate()
-                            .endEntityOperator()
-                        .endSpec()
-                        .build();
-
-        List<EnvVar> containerEnvVars = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER).getTlsSidecarEnvVars();
-
-        assertThat("Failed to prevent over writing existing container environment variable: " + testEnvOneKey,
-                containerEnvVars.stream().filter(env -> testEnvOneKey.equals(env.getName()))
-                        .map(EnvVar::getValue).findFirst().orElse("").equals(testEnvOneValue), is(false));
     }
 
     @ParallelTest
@@ -935,8 +715,8 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
-        Deployment deployment = eo.generateDeployment(false, null, null);
+        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
+        Deployment deployment = eo.generateDeployment(Map.of(), false, null, null);
 
         assertThat(deployment.getSpec().getTemplate().getSpec().getContainers(),
                 hasItem(allOf(
@@ -972,8 +752,8 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
-        Deployment deployment = eo.generateDeployment(false, null, null);
+        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
+        Deployment deployment = eo.generateDeployment(Map.of(), false, null, null);
 
         assertThat(deployment.getSpec().getTemplate().getSpec().getContainers(),
                 hasItem(allOf(
@@ -981,44 +761,7 @@ public class EntityOperatorTest {
                         hasProperty("securityContext", equalTo(securityContext))
                 )));
     }
-
-    @ParallelTest
-    public void testTlsSidecarContainerSecurityContext() {
-
-        SecurityContext securityContext = new SecurityContextBuilder()
-                .withPrivileged(false)
-                .withReadOnlyRootFilesystem(false)
-                .withAllowPrivilegeEscalation(false)
-                .withRunAsNonRoot(true)
-                .withNewCapabilities()
-                    .addToDrop("ALL")
-                .endCapabilities()
-                .build();
-
-        Kafka resource = new KafkaBuilder(ResourceUtils.createKafka(namespace, cluster, replicas, image, healthDelay, healthTimeout))
-                .editSpec()
-                    .editOrNewEntityOperator()
-                        .withTopicOperator(entityTopicOperatorSpec)
-                        .withUserOperator(entityUserOperatorSpec)
-                        .editOrNewTemplate()
-                            .editOrNewTlsSidecarContainer()
-                                .withSecurityContext(securityContext)
-                            .endTlsSidecarContainer()
-                        .endTemplate()
-                    .endEntityOperator()
-                .endSpec()
-                .build();
-
-        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
-        Deployment deployment = eo.generateDeployment(false, null, null);
-
-        assertThat(deployment.getSpec().getTemplate().getSpec().getContainers(),
-                hasItem(allOf(
-                        hasProperty("name", equalTo(EntityOperator.TLS_SIDECAR_NAME)),
-                        hasProperty("securityContext", equalTo(securityContext))
-                )));
-    }
-
+    
     @ParallelTest
     public void testRole() {
         Kafka resource = new KafkaBuilder(ResourceUtils.createKafka(namespace, cluster, replicas, image, healthDelay, healthTimeout))
@@ -1030,7 +773,7 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
         Role role = eo.generateRole(namespace, namespace);
 
         assertThat(role.getMetadata().getName(), is("foo-entity-operator"));
@@ -1038,14 +781,19 @@ public class EntityOperatorTest {
 
         List<PolicyRule> rules = new ArrayList<>();
         rules.add(new PolicyRuleBuilder()
-                .addToResources("kafkatopics", "kafkatopics/status", "kafkausers", "kafkausers/status")
+                .addToResources("kafkatopics")
                 .addToVerbs("get", "list", "watch", "create", "patch", "update", "delete")
                 .addToApiGroups(Constants.RESOURCE_GROUP_NAME)
                 .build());
         rules.add(new PolicyRuleBuilder()
-                .addToResources("events")
-                .addToVerbs("create")
-                .addToApiGroups("")
+                .addToResources("kafkausers")
+                .addToVerbs("get", "list", "watch", "create", "patch", "update")
+                .addToApiGroups(Constants.RESOURCE_GROUP_NAME)
+                .build());
+        rules.add(new PolicyRuleBuilder()
+                .addToResources("kafkatopics/status", "kafkausers/status")
+                .addToVerbs("get", "patch", "update")
+                .addToApiGroups(Constants.RESOURCE_GROUP_NAME)
                 .build());
         rules.add(new PolicyRuleBuilder()
                 .addToResources("secrets")
@@ -1066,7 +814,7 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
         Role role = eo.generateRole(namespace, namespace);
 
         TestUtils.checkOwnerReference(role, resource);
@@ -1074,6 +822,7 @@ public class EntityOperatorTest {
         role = eo.generateRole(namespace, "some-other-namespace");
         assertThat(role.getMetadata().getOwnerReferences().size(), is(0));
     }
+
     @ParallelTest
     public void testTopicOperatorNetworkPolicy() {
         Kafka resource = new KafkaBuilder(ResourceUtils.createKafka(namespace, cluster, replicas, image, healthDelay, healthTimeout))
@@ -1085,7 +834,7 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
         NetworkPolicy np = eo.generateNetworkPolicy();
 
@@ -1097,6 +846,7 @@ public class EntityOperatorTest {
         assertThat(rules.size(), is(0));
 
     }
+
     @ParallelTest
     public void testUserOperatorNetworkPolicy() {
         Kafka resource = new KafkaBuilder(ResourceUtils.createKafka(namespace, cluster, replicas, image, healthDelay, healthTimeout))
@@ -1108,7 +858,7 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
         NetworkPolicy np = eo.generateNetworkPolicy();
 
@@ -1135,15 +885,36 @@ public class EntityOperatorTest {
                 .endSpec()
                 .build();
 
-        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, VERSIONS, SHARED_ENV_PROVIDER);
+        EntityOperator eo =  EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, ResourceUtils.dummyClusterOperatorConfig());
 
         NetworkPolicy np = eo.generateNetworkPolicy();
 
         assertThat(np.getSpec().getIngress().size(), is(2));
         assertThat(np.getSpec().getIngress().get(0).getPorts().get(0).getPort(), is(new IntOrString(EntityTopicOperator.HEALTHCHECK_PORT)));
         assertThat(np.getSpec().getIngress().get(1).getPorts().get(0).getPort(), is(new IntOrString(EntityUserOperator.HEALTHCHECK_PORT)));
+    }
 
+    @ParallelTest
+    public void testFeatureGateEnvVars() {
+        Kafka resource = new KafkaBuilder(ResourceUtils.createKafka(namespace, cluster, replicas, image, healthDelay, healthTimeout))
+                .editSpec()
+                    .withNewEntityOperator()
+                        .withNewTopicOperator()
+                        .endTopicOperator()
+                        .withNewUserOperator()
+                        .endUserOperator()
+                    .endEntityOperator()
+                .endSpec()
+                .build();
+
+        ClusterOperatorConfig config = new ClusterOperatorConfig.ClusterOperatorConfigBuilder(ResourceUtils.dummyClusterOperatorConfig(), VERSIONS)
+                .with(ClusterOperatorConfig.FEATURE_GATES.key(), "+ContinueReconciliationOnManualRollingUpdateFailure")
+                .build();
+
+        EntityOperator eo = EntityOperator.fromCrd(new Reconciliation("test", resource.getKind(), resource.getMetadata().getNamespace(), resource.getMetadata().getName()), resource, SHARED_ENV_PROVIDER, config);
+        Deployment dep = eo.generateDeployment(Map.of(), false, null, null);
+
+        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(0).getEnv().stream().filter(env -> "STRIMZI_FEATURE_GATES".equals(env.getName())).map(EnvVar::getValue).findFirst().orElseThrow(), is("+ContinueReconciliationOnManualRollingUpdateFailure"));
+        assertThat(dep.getSpec().getTemplate().getSpec().getContainers().get(1).getEnv().stream().filter(env -> "STRIMZI_FEATURE_GATES".equals(env.getName())).map(EnvVar::getValue).findFirst().orElseThrow(), is("+ContinueReconciliationOnManualRollingUpdateFailure"));
     }
 }
-
-

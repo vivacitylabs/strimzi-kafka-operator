@@ -11,12 +11,12 @@ import io.fabric8.kubernetes.api.model.PodBuilder;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.apps.DeploymentBuilder;
-import io.strimzi.api.kafka.model.CertificateAuthority;
-import io.strimzi.api.kafka.model.CertificateAuthorityBuilder;
-import io.strimzi.api.kafka.model.CertificateExpirationPolicy;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBuilder;
-import io.strimzi.api.kafka.model.KafkaResources;
+import io.strimzi.api.kafka.model.common.CertificateAuthority;
+import io.strimzi.api.kafka.model.common.CertificateAuthorityBuilder;
+import io.strimzi.api.kafka.model.common.CertificateExpirationPolicy;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
 import io.strimzi.certs.CertAndKey;
 import io.strimzi.certs.CertManager;
 import io.strimzi.certs.OpenSslCertManager;
@@ -25,21 +25,23 @@ import io.strimzi.operator.cluster.ClusterOperatorConfig;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
 import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.cluster.model.AbstractModel;
-import io.strimzi.operator.common.model.Ca;
-import io.strimzi.operator.common.model.InvalidResourceException;
 import io.strimzi.operator.cluster.model.ModelUtils;
 import io.strimzi.operator.cluster.model.NodeRef;
 import io.strimzi.operator.cluster.model.RestartReason;
 import io.strimzi.operator.cluster.model.RestartReasons;
 import io.strimzi.operator.cluster.operator.resource.ResourceOperatorSupplier;
-import io.strimzi.operator.common.model.PasswordGenerator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.DeploymentOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.PodOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.SecretOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.StrimziPodSetOperator;
 import io.strimzi.operator.common.Reconciliation;
+import io.strimzi.operator.common.Util;
+import io.strimzi.operator.common.auth.TlsPemIdentity;
+import io.strimzi.operator.common.model.Ca;
+import io.strimzi.operator.common.model.InvalidResourceException;
 import io.strimzi.operator.common.model.Labels;
-import io.strimzi.operator.common.operator.resource.DeploymentOperator;
-import io.strimzi.operator.common.operator.resource.PodOperator;
+import io.strimzi.operator.common.model.PasswordGenerator;
 import io.strimzi.operator.common.operator.resource.ReconcileResult;
-import io.strimzi.operator.common.operator.resource.SecretOperator;
-import io.strimzi.operator.common.operator.resource.StrimziPodSetOperator;
 import io.strimzi.test.TestUtils;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
@@ -146,19 +148,23 @@ public class CaReconcilerTest {
         StrimziPodSetOperator spsOps = supplier.strimziPodSetOperator;
         PodOperator podOps = supplier.podOperations;
 
-        when(secretOps.list(eq(NAMESPACE), any())).thenAnswer(invocation -> {
+        when(secretOps.listAsync(eq(NAMESPACE), any(Labels.class))).thenAnswer(invocation -> {
             Map<String, String> requiredLabels = ((Labels) invocation.getArgument(1)).toMap();
-            return secrets.stream().filter(s -> {
+
+            List<Secret> listedSecrets = secrets.stream().filter(s -> {
                 Map<String, String> labels = s.getMetadata().getLabels();
                 labels.keySet().retainAll(requiredLabels.keySet());
                 return labels.equals(requiredLabels);
             }).collect(Collectors.toList());
+
+            return Future.succeededFuture(listedSecrets);
         });
         ArgumentCaptor<Secret> c = ArgumentCaptor.forClass(Secret.class);
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(AbstractModel.clusterCaCertSecretName(NAME)), c.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.noop(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(AbstractModel.clusterCaKeySecretName(NAME)), c.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.noop(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.clientsCaCertificateSecretName(NAME)), c.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.noop(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.clientsCaKeySecretName(NAME)), c.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.noop(i.getArgument(0))));
+        when(secretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.secretName(NAME)))).thenAnswer(i -> Future.succeededFuture());
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.secretName(NAME)), any())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
 
         when(deploymentOps.getAsync(eq(NAMESPACE), any())).thenReturn(Future.succeededFuture());
@@ -194,28 +200,25 @@ public class CaReconcilerTest {
         String clusterCaStorePassword = "123456";
 
         Path clusterCaKeyFile = Files.createTempFile("tls", "cluster-ca-key");
+        clusterCaKeyFile.toFile().deleteOnExit();
         Path clusterCaCertFile = Files.createTempFile("tls", "cluster-ca-cert");
+        clusterCaCertFile.toFile().deleteOnExit();
         Path clusterCaStoreFile = Files.createTempFile("tls", "cluster-ca-store");
+        clusterCaStoreFile.toFile().deleteOnExit();
+        
+        Subject sbj = new Subject.Builder()
+                .withOrganizationName("io.strimzi")
+                .withCommonName(commonName).build();
 
-        try {
-            Subject sbj = new Subject.Builder()
-                    .withOrganizationName("io.strimzi")
-                    .withCommonName(commonName).build();
+        certManager.generateSelfSignedCert(clusterCaKeyFile.toFile(), clusterCaCertFile.toFile(), sbj, ModelUtils.getCertificateValidity(certificateAuthority));
 
-            certManager.generateSelfSignedCert(clusterCaKeyFile.toFile(), clusterCaCertFile.toFile(), sbj, ModelUtils.getCertificateValidity(certificateAuthority));
-
-            certManager.addCertToTrustStore(clusterCaCertFile.toFile(), CA_CRT, clusterCaStoreFile.toFile(), clusterCaStorePassword);
-            return new CertAndKey(
-                    Files.readAllBytes(clusterCaKeyFile),
-                    Files.readAllBytes(clusterCaCertFile),
-                    Files.readAllBytes(clusterCaStoreFile),
-                    null,
-                    clusterCaStorePassword);
-        } finally {
-            Files.delete(clusterCaKeyFile);
-            Files.delete(clusterCaCertFile);
-            Files.delete(clusterCaStoreFile);
-        }
+        certManager.addCertToTrustStore(clusterCaCertFile.toFile(), CA_CRT, clusterCaStoreFile.toFile(), clusterCaStorePassword);
+        return new CertAndKey(
+                Files.readAllBytes(clusterCaKeyFile),
+                Files.readAllBytes(clusterCaCertFile),
+                Files.readAllBytes(clusterCaStoreFile),
+                null,
+                clusterCaStorePassword);
     }
 
     private List<Secret> initialClusterCaSecrets(CertificateAuthority certificateAuthority)
@@ -250,8 +253,8 @@ public class CaReconcilerTest {
             throws KeyStoreException, CertificateException, NoSuchAlgorithmException, IOException {
         KeyStore trustStore = KeyStore.getInstance("PKCS12");
         trustStore.load(new ByteArrayInputStream(
-                        Base64.getDecoder().decode(data.get(CA_STORE))),
-                new String(Base64.getDecoder().decode(data.get(CA_STORE_PASSWORD)), StandardCharsets.US_ASCII).toCharArray()
+                Util.decodeBytesFromBase64(data.get(CA_STORE))),
+                Util.decodeFromBase64(data.get(CA_STORE_PASSWORD)).toCharArray()
         );
         return trustStore;
     }
@@ -1074,7 +1077,7 @@ public class CaReconcilerTest {
 
     private X509Certificate x509Certificate(String newClusterCaCert) throws CertificateException {
         return (X509Certificate) CertificateFactory.getInstance("X.509")
-                .generateCertificate(new ByteArrayInputStream(Base64.getDecoder().decode(newClusterCaCert)));
+                .generateCertificate(new ByteArrayInputStream(Util.decodeBytesFromBase64(newClusterCaCert)));
     }
 
 
@@ -1105,10 +1108,12 @@ public class CaReconcilerTest {
         assertThat(initialClusterCaKeySecret.getData().get(CA_KEY), is(notNullValue()));
         // ... and to the related truststore
         Path certFile = Files.createTempFile("tls", "-cert");
+        certFile.toFile().deleteOnExit();
         Path trustStoreFile = Files.createTempFile("tls", "-truststore");
-        Files.write(certFile, Base64.getDecoder().decode(initialClusterCaCertSecret.getData().get("ca-2018-07-01T09-00-00.crt")));
-        Files.write(trustStoreFile, Base64.getDecoder().decode(initialClusterCaCertSecret.getData().get(CA_STORE)));
-        String trustStorePassword = new String(Base64.getDecoder().decode(initialClusterCaCertSecret.getData().get(CA_STORE_PASSWORD)), StandardCharsets.US_ASCII);
+        trustStoreFile.toFile().deleteOnExit();
+        Files.write(certFile, Util.decodeBytesFromBase64(initialClusterCaCertSecret.getData().get("ca-2018-07-01T09-00-00.crt")));
+        Files.write(trustStoreFile, Util.decodeBytesFromBase64(initialClusterCaCertSecret.getData().get(CA_STORE)));
+        String trustStorePassword = Util.decodeFromBase64(initialClusterCaCertSecret.getData().get(CA_STORE_PASSWORD));
         certManager.addCertToTrustStore(certFile.toFile(), "ca-2018-07-01T09-00-00.crt", trustStoreFile.toFile(), trustStorePassword);
         initialClusterCaCertSecret.getData().put(CA_STORE, Base64.getEncoder().encodeToString(Files.readAllBytes(trustStoreFile)));
         assertThat(isCertInTrustStore("ca-2018-07-01T09-00-00.crt", initialClusterCaCertSecret.getData()), is(true));
@@ -1132,10 +1137,12 @@ public class CaReconcilerTest {
 
         // ... and to the related truststore
         certFile = Files.createTempFile("tls", "-cert");
-        Files.write(certFile, Base64.getDecoder().decode(initialClientsCaCertSecret.getData().get("ca-2018-07-01T09-00-00.crt")));
+        certFile.toFile().deleteOnExit();
+        Files.write(certFile, Util.decodeBytesFromBase64(initialClientsCaCertSecret.getData().get("ca-2018-07-01T09-00-00.crt")));
         trustStoreFile = Files.createTempFile("tls", "-truststore");
-        Files.write(trustStoreFile, Base64.getDecoder().decode(initialClientsCaCertSecret.getData().get(CA_STORE)));
-        trustStorePassword = new String(Base64.getDecoder().decode(initialClientsCaCertSecret.getData().get(CA_STORE_PASSWORD)), StandardCharsets.US_ASCII);
+        trustStoreFile.toFile().deleteOnExit();
+        Files.write(trustStoreFile, Util.decodeBytesFromBase64(initialClientsCaCertSecret.getData().get(CA_STORE)));
+        trustStorePassword = Util.decodeFromBase64(initialClientsCaCertSecret.getData().get(CA_STORE_PASSWORD));
         certManager.addCertToTrustStore(certFile.toFile(), "ca-2018-07-01T09-00-00.crt", trustStoreFile.toFile(), trustStorePassword);
         initialClientsCaCertSecret.getData().put(CA_STORE, Base64.getEncoder().encodeToString(Files.readAllBytes(trustStoreFile)));
         assertThat(isCertInTrustStore("ca-2018-07-01T09-00-00.crt", initialClientsCaCertSecret.getData()), is(true));
@@ -1267,6 +1274,7 @@ public class CaReconcilerTest {
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.clientsCaCertificateSecretName(NAME)), clientsCaCert.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.clientsCaKeySecretName(NAME)), clientsCaKey.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.secretName(NAME)), any())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
+        when(secretOps.listAsync(eq(NAMESPACE), any(Labels.class))).thenReturn(Future.succeededFuture(List.of()));
 
         when(podOps.listAsync(eq(NAMESPACE), any(Labels.class))).thenReturn(Future.succeededFuture(List.of()));
 
@@ -1352,6 +1360,7 @@ public class CaReconcilerTest {
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.clientsCaCertificateSecretName(NAME)), clientsCaCert.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.clientsCaKeySecretName(NAME)), clientsCaKey.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.secretName(NAME)), any())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
+        when(secretOps.listAsync(eq(NAMESPACE), any(Labels.class))).thenReturn(Future.succeededFuture(List.of()));
 
         when(podOps.listAsync(eq(NAMESPACE), any(Labels.class))).thenReturn(Future.succeededFuture(List.of()));
 
@@ -1431,6 +1440,7 @@ public class CaReconcilerTest {
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.clientsCaCertificateSecretName(NAME)), clientsCaCert.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.clientsCaKeySecretName(NAME)), clientsCaKey.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.secretName(NAME)), any())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
+        when(secretOps.listAsync(eq(NAMESPACE), any(Labels.class))).thenReturn(Future.succeededFuture(List.of()));
 
         when(podOps.listAsync(eq(NAMESPACE), any(Labels.class))).thenReturn(Future.succeededFuture(List.of()));
 
@@ -1466,7 +1476,6 @@ public class CaReconcilerTest {
 
     @Test
     public void testClusterCAKeyNotTrusted(Vertx vertx, VertxTestContext context) {
-
         Kafka kafka = new KafkaBuilder()
                 .withNewMetadata()
                     .withName(NAME)
@@ -1507,6 +1516,7 @@ public class CaReconcilerTest {
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.clientsCaCertificateSecretName(NAME)), clientsCaCert.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.clientsCaKeySecretName(NAME)), clientsCaKey.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.secretName(NAME)), any())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
+        when(secretOps.listAsync(eq(NAMESPACE), any(Labels.class))).thenReturn(Future.succeededFuture(List.of()));
 
         Map<String, String> generationAnnotations =
                 Map.of(Ca.ANNO_STRIMZI_IO_CLUSTER_CA_CERT_GENERATION, "0", Ca.ANNO_STRIMZI_IO_CLUSTER_CA_KEY_GENERATION, "0");
@@ -1590,6 +1600,7 @@ public class CaReconcilerTest {
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.clientsCaCertificateSecretName(NAME)), clientsCaCert.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.clientsCaKeySecretName(NAME)), clientsCaKey.capture())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
         when(secretOps.reconcile(any(), eq(NAMESPACE), eq(KafkaResources.secretName(NAME)), any())).thenAnswer(i -> Future.succeededFuture(ReconcileResult.created(i.getArgument(0))));
+        when(secretOps.listAsync(eq(NAMESPACE), any(Labels.class))).thenReturn(Future.succeededFuture(List.of()));
 
         Map<String, String> generationAnnotations =
                 Map.of(Ca.ANNO_STRIMZI_IO_CLUSTER_CA_CERT_GENERATION, "0", Ca.ANNO_STRIMZI_IO_CLUSTER_CA_KEY_GENERATION, "0");
@@ -1660,7 +1671,7 @@ public class CaReconcilerTest {
         }
 
         @Override
-        Future<Void> maybeRollZookeeper(int replicas, RestartReasons podRestartReasons) {
+        Future<Void> maybeRollZookeeper(int replicas, RestartReasons podRestartReasons, TlsPemIdentity coTlsPemIdentity) {
             this.zkPodRestartReasons = podRestartReasons;
             return Future.succeededFuture();
         }
@@ -1675,7 +1686,7 @@ public class CaReconcilerTest {
         }
 
         @Override
-        Future<Void> rollKafkaBrokers(Set<NodeRef> nodes, RestartReasons podRollReasons) {
+        Future<Void> rollKafkaBrokers(Set<NodeRef> nodes, RestartReasons podRollReasons, TlsPemIdentity coTlsPemIdentity) {
             this.kPodRollReasons = podRollReasons;
             return Future.succeededFuture();
         }

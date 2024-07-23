@@ -24,22 +24,20 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.io.Reader;
 import java.io.StringWriter;
-import java.io.Writer;
 import java.net.ServerSocket;
+import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.AbstractMap;
@@ -48,9 +46,11 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.StringTokenizer;
+import java.util.UUID;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -58,6 +58,8 @@ import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 
+import static java.lang.String.format;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Arrays.asList;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
@@ -339,6 +341,25 @@ public final class TestUtils {
 
     }
 
+    public static <T> T configFromMultiYamlFile(String yamlFile, String expectedKind, Class<T> kindClass) {
+        return configFromMultiYamlFile(new File(yamlFile), expectedKind, kindClass);
+    }
+
+    public static <T> T configFromMultiYamlFile(File yamlFile, String expectedKind, Class<T> kindClass) {
+        try {
+            YAMLFactory yamlFactory = new YAMLFactory();
+            ObjectMapper mapper = new ObjectMapper();
+            YAMLParser yamlParser = yamlFactory.createParser(yamlFile);
+            List<Map<String, Object>> resources = mapper.readValues(yamlParser, new TypeReference<Map<String, Object>>() { }).readAll();
+
+            return mapper.convertValue(resources.stream().filter(resource -> resource.get("kind").equals(expectedKind)).findFirst().get(), kindClass);
+        } catch (InvalidFormatException e) {
+            throw new IllegalArgumentException(e);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
     public static <T> T configFromYaml(File yamlFile, Class<T> c) {
         ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
         try {
@@ -366,23 +387,22 @@ public final class TestUtils {
     }
 
     /** Method to create and write file */
-    public static void writeFile(String filePath, String text) {
-        Writer writer = null;
+    public static void writeFile(Path filePath, String text) {
         try {
-            writer = new BufferedWriter(new OutputStreamWriter(
-                    new FileOutputStream(filePath), StandardCharsets.UTF_8));
-            writer.write(text);
+            Files.writeString(filePath, text, StandardCharsets.UTF_8);
         } catch (IOException e) {
             LOGGER.info("Exception during writing text in file");
             e.printStackTrace();
-        } finally {
-            try {
-                if (writer != null) {
-                    writer.close();
-                }
-            } catch (Exception ex) {
-                ex.printStackTrace();
-            }
+        }
+    }
+
+    /** Method to create and write file */
+    public static void writeFile(String filePath, String text) {
+        try {
+            Files.writeString(Paths.get(filePath), text, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            LOGGER.info("Exception during writing text in file");
+            e.printStackTrace();
         }
     }
 
@@ -504,5 +524,66 @@ public final class TestUtils {
      */
     public static void assertSuccessful(Object unused, Throwable error) {
         assertThat(error, is(nullValue()));
+    }
+
+    /**
+     * Creates an empty file in the default temporary-file directory with an UUID as prefix and .tmp as suffix.
+     * 
+     * @return The empty file just created.
+     */
+    public static File tempFile() {
+        return tempFile(null);
+    }
+
+    /**
+     * Creates an empty file in the default temporary-file directory with an UUID as prefix and given suffix.
+     * 
+     * @param suffix The suffix of the empty file (default: .tmp).
+     * 
+     * @return The empty file just created.
+     */
+    public static File tempFile(String suffix) {
+        return tempFile(null, suffix);
+    }
+
+    /**
+     * Creates an empty file in the default temporary-file directory, using the given prefix and suffix.
+     * 
+     * @param prefix The prefix of the empty file (default: UUID).
+     * @param suffix The suffix of the empty file (default: .tmp).
+     * 
+     * @return The empty file just created.
+     */
+    public static File tempFile(String prefix, String suffix) {
+        File file;
+        prefix = prefix == null ? UUID.randomUUID().toString() : prefix;
+        suffix = suffix == null ? ".tmp" : suffix;
+        try {
+            file = Files.createTempFile(prefix, suffix).toFile();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        file.deleteOnExit();
+        return file;
+    }
+
+    /**
+     * Get JSON content as string from resource.
+     *
+     * @param resourcePath Resource path.
+     *
+     * @return JSON content as string.
+     */
+    public static String jsonFromResource(String resourcePath) {
+        try {
+            URI resourceURI = Objects.requireNonNull(TestUtils.class.getClassLoader().getResource(resourcePath)).toURI();
+            Optional<String> content = Files.lines(Paths.get(resourceURI), UTF_8).reduce((x, y) -> x + y);
+            if (content.isEmpty()) {
+                throw new IOException(format("File %s from resources was empty", resourcePath));
+            }
+            return content.get();
+        } catch (Throwable t) {
+            throw new RuntimeException(t);
+        }
     }
 }

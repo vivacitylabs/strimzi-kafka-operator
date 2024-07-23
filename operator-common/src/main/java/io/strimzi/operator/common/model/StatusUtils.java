@@ -6,12 +6,12 @@
 package io.strimzi.operator.common.model;
 
 import io.fabric8.kubernetes.client.CustomResource;
-import io.strimzi.api.kafka.model.Spec;
-import io.strimzi.api.kafka.model.status.AutoRestartStatus;
-import io.strimzi.api.kafka.model.status.AutoRestartStatusBuilder;
-import io.strimzi.api.kafka.model.status.Condition;
-import io.strimzi.api.kafka.model.status.ConditionBuilder;
-import io.strimzi.api.kafka.model.status.Status;
+import io.strimzi.api.kafka.model.common.Condition;
+import io.strimzi.api.kafka.model.common.ConditionBuilder;
+import io.strimzi.api.kafka.model.common.Spec;
+import io.strimzi.api.kafka.model.connector.AutoRestartStatus;
+import io.strimzi.api.kafka.model.connector.AutoRestartStatusBuilder;
+import io.strimzi.api.kafka.model.kafka.Status;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.ReconciliationLogger;
 
@@ -267,7 +267,7 @@ public class StatusUtils {
     /**
      * Adds additional conditions to te status (this expects)
      *
-     * @param status        The Status instance where additonal conditions should be added
+     * @param status        The Status instance where additional conditions should be added
      * @param conditions    The Set with the new conditions
      */
     public static void addConditionsToStatus(Status status, Set<Condition> conditions)   {

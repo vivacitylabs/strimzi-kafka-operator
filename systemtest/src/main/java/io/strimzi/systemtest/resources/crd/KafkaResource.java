@@ -10,14 +10,14 @@ import io.fabric8.kubernetes.api.model.LabelSelectorBuilder;
 import io.fabric8.kubernetes.client.dsl.MixedOperation;
 import io.fabric8.kubernetes.client.dsl.Resource;
 import io.strimzi.api.kafka.Crds;
-import io.strimzi.api.kafka.KafkaList;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.status.KafkaStatus;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaList;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.KafkaStatus;
 import io.strimzi.operator.common.Annotations;
 import io.strimzi.operator.common.model.Labels;
-import io.strimzi.systemtest.Constants;
 import io.strimzi.systemtest.Environment;
+import io.strimzi.systemtest.TestConstants;
 import io.strimzi.systemtest.resources.ResourceManager;
 import io.strimzi.systemtest.resources.ResourceOperation;
 import io.strimzi.systemtest.resources.ResourceType;
@@ -28,10 +28,10 @@ import org.junit.platform.commons.util.Preconditions;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 
-import static io.strimzi.operator.common.Util.hashStub;
 import static io.strimzi.systemtest.enums.CustomResourceStatus.Ready;
 
 public class KafkaResource implements ResourceType<Kafka> {
@@ -76,18 +76,26 @@ public class KafkaResource implements ResourceType<Kafka> {
                 .allMatch(result -> true);
         }
 
-        // load current Kafka's annotations to obtain information, if KafkaNodePools are used for this Kafka
-        Map<String, String> annotations = kafkaClient().inNamespace(namespaceName)
-            .withName(resource.getMetadata().getName()).get().getMetadata().getAnnotations();
+        // get current Kafka
+        Kafka kafka = kafkaClient().inNamespace(namespaceName)
+            .withName(resource.getMetadata().getName()).get();
 
-        kafkaClient().inNamespace(namespaceName).withName(
-            resource.getMetadata().getName()).withPropagationPolicy(DeletionPropagation.FOREGROUND).delete();
+        // proceed only if kafka is still present as Kafka is purposefully deleted in some test cases
+        if (kafka != null) {
+            // load current Kafka's annotations to obtain information, if KafkaNodePools are used for this Kafka
+            Map<String, String> annotations = kafka.getMetadata().getAnnotations();
 
-        if (annotations.get(Annotations.ANNO_STRIMZI_IO_NODE_POOLS) == null
-            || annotations.get(Annotations.ANNO_STRIMZI_IO_NODE_POOLS).equals("disabled")) {
-            // additional deletion of pvcs with specification deleteClaim set to false which were not deleted prior this method
-            PersistentVolumeClaimUtils.deletePvcsByPrefixWithWait(namespaceName, clusterName);
+            kafkaClient().inNamespace(namespaceName).withName(
+                resource.getMetadata().getName()).withPropagationPolicy(DeletionPropagation.FOREGROUND).delete();
+
+            if (annotations.get(Annotations.ANNO_STRIMZI_IO_NODE_POOLS) == null
+                || annotations.get(Annotations.ANNO_STRIMZI_IO_NODE_POOLS).equals("disabled")) {
+                // additional deletion of pvcs with specification deleteClaim set to false which were not deleted prior this method
+                PersistentVolumeClaimUtils.deletePvcsByPrefixWithWait(namespaceName, clusterName);
+            }
         }
+
+
     }
 
     @Override
@@ -101,11 +109,11 @@ public class KafkaResource implements ResourceType<Kafka> {
 
         // KafkaExporter is not setup every time
         if (resource.getSpec().getKafkaExporter() != null) {
-            timeout += ResourceOperation.getTimeoutForResourceReadiness(Constants.KAFKA_EXPORTER_DEPLOYMENT);
+            timeout += ResourceOperation.getTimeoutForResourceReadiness(TestConstants.KAFKA_EXPORTER_DEPLOYMENT);
         }
         // CruiseControl is not setup every time
         if (resource.getSpec().getCruiseControl() != null) {
-            timeout += ResourceOperation.getTimeoutForResourceReadiness(Constants.KAFKA_CRUISE_CONTROL_DEPLOYMENT);
+            timeout += ResourceOperation.getTimeoutForResourceReadiness(TestConstants.KAFKA_CRUISE_CONTROL_DEPLOYMENT);
         }
         return ResourceManager.waitForResourceStatus(kafkaClient(), resource, Ready, timeout);
     }
@@ -123,50 +131,84 @@ public class KafkaResource implements ResourceType<Kafka> {
     }
 
     public static LabelSelector getLabelSelector(String clusterName, String componentName) {
-        Map<String, String> matchLabels = new HashMap<>();
-        matchLabels.put(Labels.STRIMZI_CLUSTER_LABEL, clusterName);
-        matchLabels.put(Labels.STRIMZI_KIND_LABEL, Kafka.RESOURCE_KIND);
-        matchLabels.put(Labels.STRIMZI_NAME_LABEL, componentName);
+        Map<String, String> matchLabels = getCommonKafkaMatchLabels(clusterName);
+
+        if (Environment.isKafkaNodePoolsEnabled()
+            && !componentName.contains("zookeeper")
+            && !componentName.contains("entity-operator")
+        ) {
+            matchLabels.put(Labels.STRIMZI_CONTROLLER_NAME_LABEL, componentName);
+        } else {
+            matchLabels.put(Labels.STRIMZI_NAME_LABEL, componentName);
+        }
 
         return new LabelSelectorBuilder()
             .withMatchLabels(matchLabels)
             .build();
     }
 
-    public static String getKafkaNodePoolName(String clusterName) {
-        return Constants.KAFKA_NODE_POOL_PREFIX + hashStub(clusterName);
+    public static LabelSelector getEntityOperatorLabelSelector(final String clusterName) {
+        final Map<String, String> matchLabels = getCommonKafkaMatchLabels(clusterName);
+
+        matchLabels.put(Labels.STRIMZI_COMPONENT_TYPE_LABEL, "entity-operator");
+
+        return new LabelSelectorBuilder()
+                .withMatchLabels(matchLabels)
+                .build();
     }
 
-    public static String getStrimziPodSetName(String clusterName) {
-        return getStrimziPodSetName(clusterName, null);
+    public static LabelSelector getCruiseControlLabelSelector(final String clusterName) {
+        final Map<String, String> matchLabels = getCommonKafkaMatchLabels(clusterName);
+
+        matchLabels.put(Labels.STRIMZI_COMPONENT_TYPE_LABEL, "cruise-control");
+
+        return new LabelSelectorBuilder()
+                .withMatchLabels(matchLabels)
+                .build();
+    }
+
+    public static LabelSelector getLabelSelectorForAllKafkaPods(String clusterName) {
+        Map<String, String> matchLabels = getCommonKafkaMatchLabels(clusterName);
+
+        matchLabels.put(Labels.STRIMZI_NAME_LABEL, KafkaResources.kafkaComponentName(clusterName));
+
+        return new LabelSelectorBuilder()
+            .withMatchLabels(matchLabels)
+            .build();
+    }
+
+    private static Map<String, String> getCommonKafkaMatchLabels(String clusterName) {
+        Map<String, String> labels = new HashMap<>();
+
+        labels.put(Labels.STRIMZI_CLUSTER_LABEL, clusterName);
+        labels.put(Labels.STRIMZI_KIND_LABEL, Kafka.RESOURCE_KIND);
+
+        return labels;
     }
 
     public static String getStrimziPodSetName(String clusterName, String nodePoolName) {
         if (Environment.isKafkaNodePoolsEnabled() && nodePoolName == null) {
-            return String.join("-", clusterName, getKafkaNodePoolName(clusterName));
-        } else if (nodePoolName != null) {
+            return String.join("-", clusterName, KafkaNodePoolResource.getBrokerPoolName(clusterName));
+        } else if (Environment.isKafkaNodePoolsEnabled()) {
             return String.join("-", clusterName, nodePoolName);
         } else {
-            return KafkaResources.kafkaStatefulSetName(clusterName);
+            return KafkaResources.kafkaComponentName(clusterName);
         }
-    }
-
-    public static String getKafkaPodName(String clusterName, int podNum) {
-        return getKafkaPodName(clusterName, null, podNum);
     }
 
     public static String getKafkaPodName(String clusterName, String nodePoolName, int podNum) {
         if (Environment.isKafkaNodePoolsEnabled()) {
-            if (nodePoolName == null) {
-                return String.join("-", clusterName, getKafkaNodePoolName(clusterName), String.valueOf(podNum));
-            }
-            return String.join("-", clusterName, nodePoolName, String.valueOf(podNum));
+            return String.join("-",
+                clusterName,
+                Objects.requireNonNullElseGet(nodePoolName, () -> KafkaNodePoolResource.getBrokerPoolName(clusterName)),
+                String.valueOf(podNum)
+            );
         }
 
         return KafkaResources.kafkaPodName(clusterName, podNum);
     }
 
-    public static String getNodePoolName(String clusterName) {
-        return Constants.KAFKA_NODE_POOL_PREFIX + hashStub(clusterName);
+    public static int getPodNumFromPodName(String componentName, String podName) {
+        return Integer.parseInt(podName.replace(componentName + "-", ""));
     }
 }

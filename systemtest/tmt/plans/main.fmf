@@ -83,11 +83,10 @@ prepare:
   - name: Install kind
     how: shell
     script: |
-      export TEST_CLUSTER='kind'
       ARCH=$(uname -m)
       if [[ $ARCH == "x86_64" ]]; then ARCH="amd64"; fi
       if [[ $ARCH == "aarch64" ]]; then ARCH="arm64"; fi
-      ./.azure/scripts/setup-kind.sh ${ARCH} | tee /tmp/setup-kind.log
+      ./.azure/scripts/setup-kind.sh ${ARCH}
 
   - name: Install helm
     how: shell
@@ -114,12 +113,10 @@ prepare:
       fi
       #
       HOST=""
-      if [[ ${IP_FAMILY} == "ipv4" ]]; then
+      if [[ ${IP_FAMILY} == "ipv4" || ${IP_FAMILY} == "dual" ]]; then
         HOST=$(hostname --ip-address | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | awk '$1 != "127.0.0.1" { print $1 }' | head -1)
-      else
-        # for ipv6 and dual
-        HOST="::"
-        # $(ip -6 addr show eth0 | awk '/inet6/ {print $2}' | cut -d '/' -f 1)
+      elif [[ ${IP_FAMILY} == "ipv6" ]]; then
+        HOST="myregistry.local"
       fi
       export MVN_ARGS="-B -DskipTests -Dmaven.javadoc.skip=true --no-transfer-progress"
       export DOCKER_REGISTRY="${HOST}:5001"
@@ -130,6 +127,16 @@ prepare:
       make docker_build
       make docker_tag
       make docker_push
+      
+      # Get latest Kafka version from kafka-versions.yaml      
+      export KAFKA_VERSION=$(cat kafka-versions.yaml | yq eval '.[] | select(.default) | .version' -)
+      # Set env var for KafkaConnect build image to avoid building images
+      export CONNECT_IMAGE_WITH_FILE_SINK_PLUGIN="${DOCKER_REGISTRY}/${DOCKER_ORG}/connect-file-sink:latest"
+      # Build base image from previous data
+      export BASE_IMAGE="${DOCKER_REGISTRY}/${DOCKER_ORG}/kafka:${DOCKER_TAG}-kafka-KAFKA_VERSION"
+      # Build the connect image
+      eval $(./systemtest/src/test/resources/connect-build/build-connect-image.sh "$KAFKA_VERSION" "$BASE_IMAGE" "$CONNECT_IMAGE_WITH_FILE_SINK_PLUGIN")
+      docker push $CONNECT_IMAGE_WITH_FILE_SINK_PLUGIN
 
 # Discover tmt defined tests in tests/ folder
 execute:
@@ -142,10 +149,10 @@ finish:
 #######################################################################
 
 /smoke:
-  summary: Run smoke strimzi test suite
+  summary: Run smoke strimzi test suite with kraft
   provision:
     hardware:
-      memory: ">= 8 GiB"
+      memory: ">= 12 GiB"
       cpu:
         processors: ">= 4"
   discover+:
@@ -153,42 +160,36 @@ finish:
       - smoke
 
 /regression-operators:
-  summary: Run regression strimzi test suite
+  summary: Run regression strimzi test suite with kraft
   discover+:
     test:
       - regression-operators
 
-/regression-components:
-  summary: Run regression strimzi test suite
+/regression-brokers-and-security:
+  summary: Run regression strimzi test suite with kraft
   discover+:
     test:
-      - regression-components
+      - regression-brokers-and-security
 
-/kraft-operators:
-  summary: Run regression kraft strimzi test suite
+/regression-operands:
+  summary: Run regression strimzi test suite with kraft
   discover+:
     test:
-      - kraft-operators
-
-/kraft-components:
-  summary: Run regression kraft strimzi test suite
-  discover+:
-    test:
-      - kraft-components
+      - regression-operands
 
 /acceptance:
-  summary: Run acceptance strimzi test suite
+  summary: Run acceptance strimzi test suite with kraft
   provision:
     hardware:
-      memory: ">= 16 GiB"
+      memory: ">= 24 GiB"
       cpu:
-        processors: ">= 4"
+        processors: ">= 8"
   discover+:
     test:
       - acceptance
 
 /sanity:
-  summary: Run sanity strimzi test suite
+  summary: Run sanity strimzi test suite with kraft
   provision:
     hardware:
       memory: ">= 16 GiB"
@@ -199,12 +200,54 @@ finish:
       - sanity
 
 /upgrade:
-  summary: Run upgrade strimzi test suite
+  summary: Run upgrade strimzi test suite with kraft
   provision:
     hardware:
-      memory: ">= 8 GiB"
+      memory: ">= 12 GiB"
       cpu:
         processors: ">= 4"
   discover+:
     test:
       - upgrade
+
+/performance:
+  summary: Run performance test suite with kraft
+  provision:
+    hardware:
+      memory: ">= 30 GiB"
+      cpu:
+        processors: ">= 8"
+      # it seems that default disk size (i.e., 50GB) is not enough for capacity tests
+      disk:
+        - size: ">= 60 GB"
+  discover+:
+    test:
+      - performance
+
+/performance-capacity:
+  summary: Run performance test suite with kraft
+  provision:
+    hardware:
+      memory: ">= 30 GiB"
+      cpu:
+        processors: ">= 8"
+      # it seems that default disk size (i.e., 50GB) is not enough for capacity tests
+      disk:
+        - size: ">= 60 GB"
+  discover+:
+    test:
+      - performance-capacity
+
+/performance-topic-operator-capacity:
+  summary: Run topic operator performance capacity strimzi test suite
+  provision:
+    hardware:
+      memory: ">= 30 GiB"
+      cpu:
+        processors: ">= 8"
+      # it seems that default disk size (i.e., 50GB) is not enough for capacity tests
+      disk:
+        - size: ">= 60 GB"
+  discover+:
+    test:
+      - performance-topic-operator-capacity

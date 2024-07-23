@@ -9,36 +9,37 @@ import io.fabric8.kubernetes.api.model.NodeAddress;
 import io.fabric8.kubernetes.api.model.NodeBuilder;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodBuilder;
-import io.fabric8.kubernetes.api.model.Secret;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBuilder;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.listener.NodeAddressType;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerConfigurationBroker;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerConfigurationBrokerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
-import io.strimzi.api.kafka.model.status.KafkaStatus;
-import io.strimzi.api.kafka.model.status.ListenerStatusBuilder;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.KafkaStatus;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerConfigurationBroker;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerConfigurationBrokerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
+import io.strimzi.api.kafka.model.kafka.listener.ListenerStatusBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.NodeAddressType;
 import io.strimzi.certs.OpenSslCertManager;
-import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
 import io.strimzi.operator.cluster.ClusterOperatorConfig;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
+import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
 import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.cluster.model.AbstractModel;
-import io.strimzi.operator.common.model.ClientsCa;
 import io.strimzi.operator.cluster.model.ClusterCa;
+import io.strimzi.operator.cluster.model.KafkaCluster;
+import io.strimzi.operator.cluster.model.KafkaMetadataConfigurationState;
 import io.strimzi.operator.cluster.model.KafkaVersion;
 import io.strimzi.operator.cluster.model.KafkaVersionChange;
 import io.strimzi.operator.cluster.operator.resource.ResourceOperatorSupplier;
-import io.strimzi.operator.common.model.PasswordGenerator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.NodeOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.PodOperator;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.ReconciliationLogger;
+import io.strimzi.operator.common.auth.TlsPemIdentity;
+import io.strimzi.operator.common.model.ClientsCa;
 import io.strimzi.operator.common.model.Labels;
+import io.strimzi.operator.common.model.PasswordGenerator;
 import io.strimzi.operator.common.operator.MockCertManager;
-import io.strimzi.operator.common.operator.resource.NodeOperator;
-import io.strimzi.operator.common.operator.resource.PodOperator;
-import io.strimzi.operator.common.operator.resource.SecretOperator;
 import io.strimzi.platform.KubernetesVersion;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
@@ -68,12 +69,13 @@ public class KafkaReconcilerStatusTest {
     private final static String NAMESPACE = "testns";
     private final static String CLUSTER_NAME = "testkafka";
     private final static KafkaVersion.Lookup VERSIONS = KafkaVersionTestUtils.getKafkaVersionLookup();
-    private final static PlatformFeaturesAvailability PFA = new PlatformFeaturesAvailability(true, KubernetesVersion.V1_22);
+    private final static PlatformFeaturesAvailability PFA = new PlatformFeaturesAvailability(true, KubernetesVersion.MINIMAL_SUPPORTED_VERSION);
     private final static KafkaVersionChange VERSION_CHANGE = new KafkaVersionChange(
             VERSIONS.defaultVersion(),
             VERSIONS.defaultVersion(),
             VERSIONS.defaultVersion().protocolVersion(),
-            VERSIONS.defaultVersion().messageVersion()
+            VERSIONS.defaultVersion().messageVersion(),
+            VERSIONS.defaultVersion().metadataVersion()
     );
     private final static ClusterOperatorConfig CO_CONFIG = ResourceUtils.dummyClusterOperatorConfig();
     private final static ClusterCa CLUSTER_CA = new ClusterCa(
@@ -149,12 +151,6 @@ public class KafkaReconcilerStatusTest {
 
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
 
-        // Mock the secrets needed for Kafka client
-        SecretOperator mockSecretOps = supplier.secretOperations;
-        Secret secret = new Secret();
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.clusterCaCertificateSecretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.secretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-
         // Run the test
         KafkaReconciler reconciler = new MockKafkaReconcilerStatusTasks(
                 new Reconciliation("test-trigger", Kafka.RESOURCE_KIND, NAMESPACE, CLUSTER_NAME),
@@ -198,12 +194,6 @@ public class KafkaReconcilerStatusTest {
 
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
 
-        // Mock the secrets needed for Kafka client
-        SecretOperator mockSecretOps = supplier.secretOperations;
-        Secret secret = new Secret();
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.clusterCaCertificateSecretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.secretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-
         // Run the test
         KafkaReconciler reconciler = new MockKafkaReconcilerStatusTasks(
                 new Reconciliation("test-trigger", Kafka.RESOURCE_KIND, NAMESPACE, CLUSTER_NAME),
@@ -238,14 +228,8 @@ public class KafkaReconcilerStatusTest {
 
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
 
-        // Mock the secrets needed for Kafka client
-        SecretOperator mockSecretOps = supplier.secretOperations;
-        Secret secret = new Secret();
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.clusterCaCertificateSecretName(CLUSTER_NAME)))).thenReturn(Future.failedFuture("expected failure"));
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.secretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-
         // Run the test
-        KafkaReconciler reconciler = new MockKafkaReconcilerStatusTasks(
+        KafkaReconciler reconciler = new MockKafkaReconcilerFailsWithVersionUpdate(
                 new Reconciliation("test-trigger", Kafka.RESOURCE_KIND, NAMESPACE, CLUSTER_NAME),
                 supplier,
                 kafka
@@ -276,12 +260,6 @@ public class KafkaReconcilerStatusTest {
 
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
 
-        // Mock the secrets needed for Kafka client
-        SecretOperator mockSecretOps = supplier.secretOperations;
-        Secret secret = new Secret();
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.clusterCaCertificateSecretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.secretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-
         // Run the test
         KafkaReconciler reconciler = new MockKafkaReconcilerStatusTasks(
                 new Reconciliation("test-trigger", Kafka.RESOURCE_KIND, NAMESPACE, CLUSTER_NAME),
@@ -304,12 +282,6 @@ public class KafkaReconcilerStatusTest {
     @Test
     public void testKafkaReconcilerStatusWithSpecCheckerWarnings(VertxTestContext context) {
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
-
-        // Mock the secrets needed for Kafka client
-        SecretOperator mockSecretOps = supplier.secretOperations;
-        Secret secret = new Secret();
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.clusterCaCertificateSecretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.secretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
 
         // Run the test
         KafkaReconciler reconciler = new MockKafkaReconcilerStatusTasks(
@@ -352,16 +324,11 @@ public class KafkaReconcilerStatusTest {
 
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
 
-        // Mock the secrets needed for Kafka client
-        SecretOperator mockSecretOps = supplier.secretOperations;
-        Secret secret = new Secret();
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.clusterCaCertificateSecretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.secretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-
         // Mock Kafka broker pods
         Pod pod0 = new PodBuilder()
                 .withNewMetadata()
                     .withName(CLUSTER_NAME + "-kafka-" + 0)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
                 .endMetadata()
                 .withNewStatus()
                     .withHostIP("10.0.0.1")
@@ -371,6 +338,7 @@ public class KafkaReconcilerStatusTest {
         Pod pod1 = new PodBuilder()
                 .withNewMetadata()
                     .withName(CLUSTER_NAME + "-kafka-" + 1)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
                 .endMetadata()
                 .withNewStatus()
                     .withHostIP("10.0.0.25")
@@ -380,6 +348,7 @@ public class KafkaReconcilerStatusTest {
         Pod pod2 = new PodBuilder()
                 .withNewMetadata()
                     .withName(CLUSTER_NAME + "-kafka-" + 2)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
                 .endMetadata()
                 .withNewStatus()
                     .withHostIP("10.0.0.13")
@@ -390,6 +359,127 @@ public class KafkaReconcilerStatusTest {
         pods.add(pod0);
         pods.add(pod1);
         pods.add(pod2);
+
+        PodOperator mockPodOps = supplier.podOperations;
+        when(mockPodOps.listAsync(eq(NAMESPACE), any(Labels.class))).thenReturn(Future.succeededFuture(pods));
+
+        // Mock Kubernetes worker nodes
+        NodeOperator mockNodeOps = supplier.nodeOperator;
+        when(mockNodeOps.listAsync(any(Labels.class))).thenReturn(Future.succeededFuture(kubernetesWorkerNodes()));
+
+        // Run the test
+        KafkaReconciler reconciler = new MockKafkaReconcilerStatusTasks(
+                new Reconciliation("test-trigger", Kafka.RESOURCE_KIND, NAMESPACE, CLUSTER_NAME),
+                supplier,
+                kafka
+        );
+
+        KafkaStatus status = new KafkaStatus();
+
+        Checkpoint async = context.checkpoint();
+        reconciler.reconcile(status, Clock.systemUTC()).onComplete(res -> context.verify(() -> {
+            assertThat(res.succeeded(), is(true));
+
+            // Check listener status
+            assertThat(status.getListeners().size(), is(1));
+            assertThat(status.getListeners().get(0).getName(), is("external"));
+            assertThat(status.getListeners().get(0).getBootstrapServers(), is("5.124.16.8:31234,50.35.18.119:31234,55.36.78.115:31234"));
+            assertThat(status.getListeners().get(0).getAddresses().size(), is(3));
+
+            // Assert the listener addresses independently on their order
+            assertThat(status.getListeners().get(0).getAddresses().stream().anyMatch(a -> a.getPort() == 31234 && "5.124.16.8".equals(a.getHost())), is(true));
+            assertThat(status.getListeners().get(0).getAddresses().stream().anyMatch(a -> a.getPort() == 31234 && "55.36.78.115".equals(a.getHost())), is(true));
+            assertThat(status.getListeners().get(0).getAddresses().stream().anyMatch(a -> a.getPort() == 31234 && "50.35.18.119".equals(a.getHost())), is(true));
+
+            async.flag();
+        }));
+    }
+
+    @Test
+    public void testKafkaReconcilerStatusWithNodePortsAndKRaftControllers(VertxTestContext context) {
+        Kafka kafka = new KafkaBuilder(KAFKA)
+                .editOrNewSpec()
+                    .editOrNewKafka()
+                        .withListeners(new GenericKafkaListenerBuilder()
+                                .withName("external")
+                                .withPort(9094)
+                                .withType(KafkaListenerType.NODEPORT)
+                                .withTls(true)
+                                .build())
+                    .endKafka()
+                .endSpec()
+                .build();
+
+        ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
+
+        // Mock Kafka broker pods
+        Pod pod0 = new PodBuilder()
+                .withNewMetadata()
+                    .withName(CLUSTER_NAME + "-broker-" + 0)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
+                .endMetadata()
+                .withNewStatus()
+                    .withHostIP("10.0.0.1")
+                .endStatus()
+                .build();
+
+        Pod pod1 = new PodBuilder()
+                .withNewMetadata()
+                    .withName(CLUSTER_NAME + "-broker-" + 1)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
+                .endMetadata()
+                .withNewStatus()
+                    .withHostIP("10.0.0.25")
+                .endStatus()
+                .build();
+
+        Pod pod2 = new PodBuilder()
+                .withNewMetadata()
+                    .withName(CLUSTER_NAME + "-broker-" + 2)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
+                .endMetadata()
+                .withNewStatus()
+                    .withHostIP("10.0.0.13")
+                .endStatus()
+                .build();
+
+        Pod pod3 = new PodBuilder()
+                .withNewMetadata()
+                    .withName(CLUSTER_NAME + "-controller-" + 3)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "false", Labels.STRIMZI_CONTROLLER_ROLE_LABEL, "true"))
+                .endMetadata()
+                .withNewStatus()
+                    .withHostIP("10.0.0.1")
+                .endStatus()
+                .build();
+
+        Pod pod4 = new PodBuilder()
+                .withNewMetadata()
+                    .withName(CLUSTER_NAME + "-controller-" + 4)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "false", Labels.STRIMZI_CONTROLLER_ROLE_LABEL, "true"))
+                .endMetadata()
+                .withNewStatus()
+                    .withHostIP("10.0.0.16") // Make sure this host is not used for any of the brokers => we test that it is not included in the status!
+                .endStatus()
+                .build();
+
+        Pod pod5 = new PodBuilder()
+                .withNewMetadata()
+                    .withName(CLUSTER_NAME + "-controller-" + 5)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "false", Labels.STRIMZI_CONTROLLER_ROLE_LABEL, "true"))
+                .endMetadata()
+                .withNewStatus()
+                    .withHostIP("10.0.0.13")
+                .endStatus()
+                .build();
+
+        List<Pod> pods = new ArrayList<>();
+        pods.add(pod0);
+        pods.add(pod1);
+        pods.add(pod2);
+        pods.add(pod3);
+        pods.add(pod4);
+        pods.add(pod5);
 
         PodOperator mockPodOps = supplier.podOperations;
         when(mockPodOps.listAsync(eq(NAMESPACE), any(Labels.class))).thenReturn(Future.succeededFuture(pods));
@@ -456,16 +546,11 @@ public class KafkaReconcilerStatusTest {
 
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
 
-        // Mock the secrets needed for Kafka client
-        SecretOperator mockSecretOps = supplier.secretOperations;
-        Secret secret = new Secret();
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.clusterCaCertificateSecretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.secretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-
         // Mock Kafka broker pods
         Pod pod0 = new PodBuilder()
                 .withNewMetadata()
                     .withName(CLUSTER_NAME + "-kafka-" + 0)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
                 .endMetadata()
                 .withNewStatus()
                     .withHostIP("10.0.0.1")
@@ -475,6 +560,7 @@ public class KafkaReconcilerStatusTest {
         Pod pod1 = new PodBuilder()
                 .withNewMetadata()
                     .withName(CLUSTER_NAME + "-kafka-" + 1)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
                 .endMetadata()
                 .withNewStatus()
                     .withHostIP("10.0.0.25")
@@ -484,6 +570,7 @@ public class KafkaReconcilerStatusTest {
         Pod pod2 = new PodBuilder()
                 .withNewMetadata()
                     .withName(CLUSTER_NAME + "-kafka-" + 2)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
                 .endMetadata()
                 .withNewStatus()
                     .withHostIP("10.0.0.13")
@@ -550,16 +637,11 @@ public class KafkaReconcilerStatusTest {
 
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
 
-        // Mock the secrets needed for Kafka client
-        SecretOperator mockSecretOps = supplier.secretOperations;
-        Secret secret = new Secret();
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.clusterCaCertificateSecretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.secretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-
         // Mock Kafka broker pods
         Pod pod0 = new PodBuilder()
                 .withNewMetadata()
                     .withName(CLUSTER_NAME + "-kafka-" + 0)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
                 .endMetadata()
                 .withNewStatus()
                     .withHostIP("10.0.0.1")
@@ -569,6 +651,7 @@ public class KafkaReconcilerStatusTest {
         Pod pod1 = new PodBuilder()
                 .withNewMetadata()
                     .withName(CLUSTER_NAME + "-kafka-" + 1)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
                 .endMetadata()
                 .withNewStatus()
                     .withHostIP("10.0.0.25")
@@ -578,6 +661,7 @@ public class KafkaReconcilerStatusTest {
         Pod pod2 = new PodBuilder()
                 .withNewMetadata()
                     .withName(CLUSTER_NAME + "-kafka-" + 2)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
                 .endMetadata()
                 .withNewStatus()
                     .withHostIP("10.0.0.13")
@@ -641,16 +725,11 @@ public class KafkaReconcilerStatusTest {
 
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
 
-        // Mock the secrets needed for Kafka client
-        SecretOperator mockSecretOps = supplier.secretOperations;
-        Secret secret = new Secret();
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.clusterCaCertificateSecretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.secretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-
         // Mock Kafka broker pods
         Pod pod0 = new PodBuilder()
                 .withNewMetadata()
                     .withName(CLUSTER_NAME + "-kafka-" + 0)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
                 .endMetadata()
                 .withNewStatus()
                     .withHostIP("10.0.0.1")
@@ -660,6 +739,7 @@ public class KafkaReconcilerStatusTest {
         Pod pod1 = new PodBuilder()
                 .withNewMetadata()
                     .withName(CLUSTER_NAME + "-kafka-" + 1)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
                 .endMetadata()
                 .withNewStatus()
                     .withHostIP("10.0.0.1")
@@ -669,6 +749,7 @@ public class KafkaReconcilerStatusTest {
         Pod pod2 = new PodBuilder()
                 .withNewMetadata()
                     .withName(CLUSTER_NAME + "-kafka-" + 2)
+                    .withLabels(Map.of(Labels.STRIMZI_BROKER_ROLE_LABEL, "true"))
                 .endMetadata()
                 .withNewStatus()
                     .withHostIP("10.0.0.1")
@@ -728,12 +809,6 @@ public class KafkaReconcilerStatusTest {
                 .build();
 
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
-
-        // Mock the secrets needed for Kafka client
-        SecretOperator mockSecretOps = supplier.secretOperations;
-        Secret secret = new Secret();
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.clusterCaCertificateSecretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
-        when(mockSecretOps.getAsync(eq(NAMESPACE), eq(KafkaResources.secretName(CLUSTER_NAME)))).thenReturn(Future.succeededFuture(secret));
 
         // Mock Kafka broker pods
         Pod pod0 = new PodBuilder()
@@ -860,12 +935,26 @@ public class KafkaReconcilerStatusTest {
         private static final ReconciliationLogger LOGGER = ReconciliationLogger.create(MockKafkaReconcilerStatusTasks.class.getName());
 
         public MockKafkaReconcilerStatusTasks(Reconciliation reconciliation, ResourceOperatorSupplier supplier, Kafka kafkaCr) {
-            super(reconciliation, kafkaCr, null, Map.of(), Map.of(), CLUSTER_CA, CLIENTS_CA, VERSION_CHANGE, CO_CONFIG, supplier, PFA, vertx);
+            super(reconciliation, kafkaCr, null, createKafkaCluster(reconciliation, supplier, kafkaCr), CLUSTER_CA, CLIENTS_CA, CO_CONFIG, supplier, PFA, vertx, new KafkaMetadataStateManager(reconciliation, kafkaCr));
+        }
+
+        private static KafkaCluster createKafkaCluster(Reconciliation reconciliation, ResourceOperatorSupplier supplier, Kafka kafkaCr)   {
+            return  KafkaClusterCreator.createKafkaCluster(
+                    reconciliation,
+                    kafkaCr,
+                    null,
+                    Map.of(),
+                    Map.of(),
+                    VERSION_CHANGE,
+                    new KafkaMetadataStateManager(reconciliation, kafkaCr).getMetadataConfigurationState(),
+                    VERSIONS,
+                    supplier.sharedEnvironmentProvider);
         }
 
         @Override
         public Future<Void> reconcile(KafkaStatus kafkaStatus, Clock clock)    {
             return modelWarnings(kafkaStatus)
+                    .compose(i -> initClientAuthenticationCertificates())
                     .compose(i -> listeners())
                     .compose(i -> clusterId(kafkaStatus))
                     .compose(i -> nodePortExternalListenerStatus())
@@ -884,6 +973,44 @@ public class KafkaReconcilerStatusTest {
             listenerReconciliationResults.listenerStatuses.add(new ListenerStatusBuilder().withName("external").build());
 
             return Future.succeededFuture();
+        }
+
+        @Override
+        protected Future<Void> initClientAuthenticationCertificates() {
+            coTlsPemIdentity = new TlsPemIdentity(null, null);
+            return Future.succeededFuture();
+        }
+    }
+
+    static class MockKafkaReconcilerFailsWithVersionUpdate extends KafkaReconciler {
+        private static final ReconciliationLogger LOGGER = ReconciliationLogger.create(MockKafkaReconcilerStatusTasks.class.getName());
+
+        public MockKafkaReconcilerFailsWithVersionUpdate(Reconciliation reconciliation, ResourceOperatorSupplier supplier, Kafka kafkaCr) {
+            super(reconciliation, kafkaCr, null, createKafkaCluster(reconciliation, supplier, kafkaCr), CLUSTER_CA, CLIENTS_CA, CO_CONFIG, supplier, PFA, vertx, new KafkaMetadataStateManager(reconciliation, kafkaCr));
+        }
+
+        private static KafkaCluster createKafkaCluster(Reconciliation reconciliation, ResourceOperatorSupplier supplier, Kafka kafkaCr)   {
+            return  KafkaClusterCreator.createKafkaCluster(
+                    reconciliation,
+                    kafkaCr,
+                    null,
+                    Map.of(),
+                    Map.of(),
+                    VERSION_CHANGE,
+                    KafkaMetadataConfigurationState.KRAFT,
+                    VERSIONS,
+                    supplier.sharedEnvironmentProvider);
+        }
+
+        @Override
+        public Future<Void> reconcile(KafkaStatus kafkaStatus, Clock clock)    {
+            return modelWarnings(kafkaStatus)
+                    .compose(i -> Future.failedFuture("Reconciliation step failed"))
+                    .compose(i -> updateKafkaVersion(kafkaStatus))
+                    .recover(error -> {
+                        LOGGER.errorCr(reconciliation, "Reconciliation failed", error);
+                        return Future.failedFuture(error);
+                    });
         }
     }
 }

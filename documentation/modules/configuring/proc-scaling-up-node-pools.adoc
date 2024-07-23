@@ -3,30 +3,32 @@
 // assembly-config.adoc
 
 [id='proc-scaling-up-node-pools-{context}']
-= (Preview) Adding nodes to a node pool
+= Adding nodes to a node pool
 
 [role="_abstract"]
 This procedure describes how to scale up a node pool to add new nodes.
+Currently, scale up is only possible for broker-only node pools containing nodes that run as dedicated brokers.
 
 In this procedure, we start with three nodes for node pool `pool-a`:
 
 .Kafka nodes in the node pool
 [source,shell]
 ----
-NAME                       READY  STATUS   RESTARTS
-my-cluster-pool-a-kafka-0  1/1    Running  0
-my-cluster-pool-a-kafka-1  1/1    Running  0
-my-cluster-pool-a-kafka-2  1/1    Running  0
+NAME                 READY  STATUS   RESTARTS
+my-cluster-pool-a-0  1/1    Running  0
+my-cluster-pool-a-1  1/1    Running  0
+my-cluster-pool-a-2  1/1    Running  0
 ----
 
 Node IDs are appended to the name of the node on creation.
-We add node `my-cluster-pool-a-kafka-3`, which has a node ID of `3`.
+We add node `my-cluster-pool-a-3`, which has a node ID of `3`.
 
 NOTE: During this process, the ID of the node that holds the partition replicas changes. Consider any dependencies that reference the node ID.
 
 .Prerequisites
 
 * xref:deploying-cluster-operator-str[The Cluster Operator must be deployed.]
+* xref:proc-configuring-deploying-cruise-control-str[Cruise Control is deployed with Kafka.]
 * (Optional) For scale up operations, xref:proc-managing-node-pools-ids-{context}[you can specify the node IDs to use in the operation].
 +
 If you have assigned a range of node IDs for the operation, the ID of the node being added is determined by the sequence of nodes given. 
@@ -44,7 +46,7 @@ For example, node pool `pool-a` has three replicas. We add a node by increasing 
 kubectl scale kafkanodepool pool-a --replicas=4
 ----
 
-. Check the status of the deployment and wait for the pods in the node pool to be created and have a status of `READY`.
+. Check the status of the deployment and wait for the pods in the node pool to be created and ready (`1/1`).
 +
 [source,shell]
 ----
@@ -54,13 +56,28 @@ kubectl get pods -n <my_cluster_operator_namespace>
 .Output shows four Kafka nodes in the node pool
 [source,shell]
 ----
-NAME                       READY  STATUS   RESTARTS
-my-cluster-pool-a-kafka-0  1/1    Running  0
-my-cluster-pool-a-kafka-1  1/1    Running  0
-my-cluster-pool-a-kafka-2  1/1    Running  0
-my-cluster-pool-a-kafka-3  1/1    Running  0
+NAME                 READY  STATUS   RESTARTS
+my-cluster-pool-a-0  1/1    Running  0
+my-cluster-pool-a-1  1/1    Running  0
+my-cluster-pool-a-2  1/1    Running  0
+my-cluster-pool-a-3  1/1    Running  0
 ---- 
 
 . Reassign the partitions after increasing the number of nodes in the node pool.
 +
-After scaling up a node pool, you can use the Cruise Control `add-brokers` mode to move partition replicas from existing brokers to the newly added brokers.
+After scaling up a node pool, use the Cruise Control `add-brokers` mode to move partition replicas from existing brokers to the newly added brokers.
++
+.Using Cruise Control to reassign partition replicas
+[source,shell,subs="+attributes"]
+----
+apiVersion: {KafkaRebalanceApiVersion}
+kind: KafkaRebalance
+metadata:
+  # ...
+spec:
+  mode: add-brokers
+  brokers: [3]
+----
++
+We are reassigning partitions to node `my-cluster-pool-a-3`. 
+The reassignment can take some time depending on the number of topics and partitions in the cluster.

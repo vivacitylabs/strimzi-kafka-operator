@@ -4,6 +4,21 @@
  */
 package io.strimzi.operator.common.operator.resource.concurrent;
 
+import io.fabric8.kubernetes.api.model.HasMetadata;
+import io.fabric8.kubernetes.api.model.KubernetesResourceList;
+import io.fabric8.kubernetes.api.model.ListOptionsBuilder;
+import io.fabric8.kubernetes.client.Watch;
+import io.fabric8.kubernetes.client.Watcher;
+import io.fabric8.kubernetes.client.WatcherException;
+import io.fabric8.kubernetes.client.dsl.Deletable;
+import io.fabric8.kubernetes.client.dsl.Gettable;
+import io.fabric8.kubernetes.client.dsl.Listable;
+import io.fabric8.kubernetes.client.dsl.Watchable;
+import io.strimzi.operator.common.Reconciliation;
+import io.strimzi.operator.common.ReconciliationLogger;
+import io.strimzi.operator.common.TimeoutException;
+import io.strimzi.operator.common.Util;
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.List;
@@ -17,21 +32,6 @@ import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
-
-import io.fabric8.kubernetes.api.model.HasMetadata;
-import io.fabric8.kubernetes.api.model.KubernetesResourceList;
-import io.fabric8.kubernetes.api.model.ListOptionsBuilder;
-import io.fabric8.kubernetes.client.Watch;
-import io.fabric8.kubernetes.client.Watcher;
-import io.fabric8.kubernetes.client.WatcherException;
-import io.fabric8.kubernetes.client.dsl.Deletable;
-import io.fabric8.kubernetes.client.dsl.Gettable;
-import io.fabric8.kubernetes.client.dsl.Listable;
-import io.fabric8.kubernetes.client.dsl.Watchable;
-import io.strimzi.operator.common.Reconciliation;
-import io.strimzi.operator.common.ReconciliationLogger;
-import io.strimzi.operator.common.Util;
-import io.strimzi.operator.common.operator.resource.TimeoutException;
 
 /**
  * Utility method for working with Kubernetes resources

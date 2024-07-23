@@ -7,13 +7,13 @@ package io.strimzi.api.kafka.model.connect;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
-import io.strimzi.api.kafka.model.Constants;
-import io.strimzi.api.kafka.model.UnknownPropertyPreserving;
+import io.strimzi.api.kafka.model.common.Constants;
+import io.strimzi.api.kafka.model.common.UnknownPropertyPreserving;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.sundr.builder.annotations.Buildable;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
-import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -25,15 +25,14 @@ import java.util.Map;
         builderPackage = Constants.FABRIC8_KUBERNETES_API
 )
 @JsonInclude(JsonInclude.Include.NON_DEFAULT)
-@JsonPropertyOrder({ "connectorClass", "type", "version" })
+@JsonPropertyOrder({ "class", "type", "version" })
 @EqualsAndHashCode
-public class ConnectorPlugin implements Serializable, UnknownPropertyPreserving {
-    private static final long serialVersionUID = 1L;
-
+@ToString
+public class ConnectorPlugin implements UnknownPropertyPreserving {
     private String connectorClass;
     private String type;
     private String version;
-    private Map<String, Object> additionalProperties = new HashMap<>(0);
+    private Map<String, Object> additionalProperties;
 
     @Description("The class of the connector plugin.")
     @JsonInclude(value = JsonInclude.Include.NON_NULL)
@@ -69,13 +68,15 @@ public class ConnectorPlugin implements Serializable, UnknownPropertyPreserving 
 
     @Override
     public Map<String, Object> getAdditionalProperties() {
-        return this.additionalProperties;
+        return this.additionalProperties != null ? this.additionalProperties : Map.of();
     }
 
     @Override
     public void setAdditionalProperty(String name, Object value) {
+        if (this.additionalProperties == null) {
+            this.additionalProperties = new HashMap<>(2);
+        }
         this.additionalProperties.put(name, value);
     }
-
 }
 

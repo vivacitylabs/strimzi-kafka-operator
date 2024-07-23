@@ -4,25 +4,27 @@
  */
 package io.strimzi.operator.user;
 
-import io.strimzi.operator.common.operator.resource.ConfigParameter;
+import io.strimzi.operator.common.config.ConfigParameter;
+import io.strimzi.operator.common.featuregates.FeatureGates;
 import io.strimzi.operator.common.model.Labels;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.List;
 import java.util.Set;
-import java.util.Collections;
 
-import static io.strimzi.operator.common.operator.resource.ConfigParameterParser.LONG;
-import static io.strimzi.operator.common.operator.resource.ConfigParameterParser.INTEGER;
-import static io.strimzi.operator.common.operator.resource.ConfigParameterParser.NON_EMPTY_STRING;
-import static io.strimzi.operator.common.operator.resource.ConfigParameterParser.SEMICOLON_SEPARATED_LIST;
-import static io.strimzi.operator.common.operator.resource.ConfigParameterParser.PROPERTIES;
-import static io.strimzi.operator.common.operator.resource.ConfigParameterParser.STRING;
-import static io.strimzi.operator.common.operator.resource.ConfigParameterParser.LABEL_PREDICATE;
-import static io.strimzi.operator.common.operator.resource.ConfigParameterParser.BOOLEAN;
-import static io.strimzi.operator.common.operator.resource.ConfigParameterParser.strictlyPositive;
+import static io.strimzi.operator.common.config.ConfigParameterParser.BOOLEAN;
+import static io.strimzi.operator.common.config.ConfigParameterParser.INTEGER;
+import static io.strimzi.operator.common.config.ConfigParameterParser.LABEL_PREDICATE;
+import static io.strimzi.operator.common.config.ConfigParameterParser.LONG;
+import static io.strimzi.operator.common.config.ConfigParameterParser.NON_EMPTY_STRING;
+import static io.strimzi.operator.common.config.ConfigParameterParser.PROPERTIES;
+import static io.strimzi.operator.common.config.ConfigParameterParser.SEMICOLON_SEPARATED_LIST;
+import static io.strimzi.operator.common.config.ConfigParameterParser.STRING;
+import static io.strimzi.operator.common.config.ConfigParameterParser.parseFeatureGates;
+import static io.strimzi.operator.common.config.ConfigParameterParser.strictlyPositive;
 
 /**
  * Cluster Operator configuration
@@ -127,6 +129,10 @@ public class UserOperatorConfig {
      * Lit of maintenance windows
      */
     public static final ConfigParameter<List<String>> MAINTENANCE_TIME_WINDOWS = new ConfigParameter<>("STRIMZI_MAINTENANCE_TIME_WINDOWS", SEMICOLON_SEPARATED_LIST, "", CONFIG_VALUES);
+    /**
+     * Configuration string with feature gates settings
+     */
+    public static final ConfigParameter<FeatureGates> FEATURE_GATES = new ConfigParameter<>("STRIMZI_FEATURE_GATES", parseFeatureGates(), "", CONFIG_VALUES);
 
     private final Map<String, Object> map;
 
@@ -366,6 +372,12 @@ public class UserOperatorConfig {
         return get(CERTS_RENEWAL_DAYS);
     }
 
+    /**
+     * @return  Feature gates configuration
+     */
+    public FeatureGates featureGates()  {
+        return get(FEATURE_GATES);
+    }
 
     @Override
     public String toString() {
@@ -394,6 +406,7 @@ public class UserOperatorConfig {
                 "\n\tbatchMaxBlockSize=" + getBatchMaxBlockSize() +
                 "\n\tbatchMaxBlockTime=" + getBatchMaxBlockTime() +
                 "\n\tuserOperationsThreadPoolSize=" + getUserOperationsThreadPoolSize() +
+                "\n\tfeatureGates='" + featureGates() + "'" +
                 '}';
     }
 }

@@ -9,6 +9,7 @@ import io.fabric8.kubernetes.client.CustomResource;
 import io.strimzi.api.annotations.ApiVersion;
 import io.strimzi.api.annotations.DeprecatedProperty;
 import io.strimzi.api.annotations.DeprecatedType;
+import io.strimzi.crdgenerator.annotations.AddedIn;
 import io.strimzi.crdgenerator.annotations.Crd;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.strimzi.crdgenerator.annotations.DescriptionFile;
@@ -38,7 +39,6 @@ import static io.strimzi.crdgenerator.Property.properties;
 import static io.strimzi.crdgenerator.Property.subtypeMap;
 import static io.strimzi.crdgenerator.Property.subtypeNames;
 import static io.strimzi.crdgenerator.Property.subtypes;
-import static java.lang.Integer.max;
 import static java.util.Collections.emptySet;
 import static java.util.Collections.singletonList;
 
@@ -139,59 +139,54 @@ class DocGenerator {
         appendUsedIn(crd, cls);
         appendDescription(cls);
         appendDiscriminator(crd, cls);
-
-        out.append("[options=\"header\"]").append(NL);
+    
+        out.append("[cols=\"2,2,3a\",options=\"header\"]").append(NL);
         out.append("|====").append(NL);
-        out.append("|Property");
-        String gunk = "1.2+<.<";
-        final Map<String, Property> properties = properties(crApiVersion, cls);
-        int maxLen = computePadding(gunk, properties);
-        appendRepeated(' ', maxLen - "Property".length() + 1);
-        out.append("|Description");
-        out.append(NL);
-
+        out.append("|Property |Property type |Description").append(NL);
+    
         LinkedHashSet<Class<?>> types = new LinkedHashSet<>();
-
-        for (Map.Entry<String, Property> entry: properties.entrySet()) {
+    
+        for (Map.Entry<String, Property> entry : properties(crApiVersion, cls).entrySet()) {
             String propertyName = entry.getKey();
             final Property property = entry.getValue();
             PropertyType propertyType = property.getType();
-            out.append("|").append(propertyName);
-            appendRepeated(' ', maxLen - propertyName.length() - gunk.length());
-            out.append(' ');
-            out.append(gunk);
-            out.append("a|");
-
-            // Set warning message for deprecated fields
-            addDeprecationWarning(property);
-
-            // Set the field description
-            addDescription(cls, property);
-
+        
             // Set the external link to Kubernetes docs or the link for fields distinguished by `type`
             KubeLink kubeLink = property.getAnnotation(KubeLink.class);
             String externalUrl = linker != null && kubeLink != null ? linker.link(kubeLink) : null;
-            addExternalUrl(property, kubeLink, externalUrl);
-
-            // Add the types to the `types` array to also generate the docs for the type itself
-            Class<?> documentedType = propertyType.isArray() ? propertyType.arrayBase() : propertyType.getType();
-
-            if (externalUrl == null
-                    && !Schema.isJsonScalarType(documentedType)
-                    && !documentedType.equals(Map.class)
-                    && !documentedType.equals(Object.class)) {
-                types.add(documentedType);
-            }
-
-            // TODO Minimum?, Maximum?, Pattern?
-
+        
+            // Add the property name
+            out.append("|").append(propertyName);
+        
             // Add the property type description
             appendPropertyType(crd, out, propertyType, externalUrl);
+        
+            // Set warning message for deprecated fields
+            addDeprecationWarning(property);
+        
+            // Add the version the field was added in
+            addAddedIn(property);
+        
+            // Add the types to the `types` array to also generate the docs for the type itself
+            Class<?> documentedType = propertyType.isArray() ? propertyType.arrayBase() : propertyType.getType();
+        
+            if (externalUrl == null
+                && !Schema.isJsonScalarType(documentedType)
+                && !documentedType.equals(Map.class)
+                && !documentedType.equals(Object.class)) {
+                types.add(documentedType);
+            }
+        
+            // Add the property description
+            addDescription(cls, property);
+        
+            out.append(NL);
         }
+        
         out.append("|====").append(NL).append(NL);
-
+    
         appendNestedTypes(crd, types);
-    }
+    }    
 
     /**
      * Sets warning message for deprecated fields
@@ -232,6 +227,21 @@ class DocGenerator {
             }
         } else {
             out.append(getDescription(description));
+        }
+    }
+
+    /**
+     * Sets the version in which the property was added. It is done only for properties that have the AddedIn annotation.
+     *
+     * @param property  The property for which the version should be added
+     *
+     * @throws IOException  Throws IOException when appending to the output fails
+     */
+    private void addAddedIn(Property property) throws IOException {
+        AddedIn addedIn = property.getAnnotation(AddedIn.class);
+
+        if (addedIn != null) {
+            out.append("Added in Strimzi " + addedIn.value() + ". ");
         }
     }
 
@@ -297,18 +307,14 @@ class DocGenerator {
         }
     }
 
-    private int computePadding(String gunk, Map<String, Property> properties) {
-        int maxLen = 0;
-        for (Map.Entry<String, Property> entry: properties.entrySet()) {
-            maxLen = max(maxLen, entry.getKey().length() + 1 + gunk.length());
-        }
-        return maxLen;
-    }
-
     @SuppressWarnings("unchecked")
     private void appendPropertyType(Crd crd, Appendable out, PropertyType propertyType, String externalUrl) throws IOException {
         Class<?> propertyClass = propertyType.isArray() ? propertyType.arrayBase() : propertyType.getType();
-        out.append(NL).append("|");
+        
+        
+        out.append(NL);
+        out.append("|");
+        
         // Now the type link
         if (externalUrl != null) {
             out.append(externalUrl).append("[").append(propertyClass.getSimpleName()).append("]");
@@ -348,7 +354,10 @@ class DocGenerator {
                 out.append(" of dimension ").append(String.valueOf(dim));
             }
         }
+
         out.append(NL);
+        out.append("|");
+
     }
 
     private void appendTypeDeprecation(Crd crd, Class<?> cls) throws IOException {

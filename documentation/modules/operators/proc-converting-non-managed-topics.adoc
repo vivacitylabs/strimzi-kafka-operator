@@ -3,16 +3,11 @@
 // assembly-using-the-topic-operator.adoc
 
 [id='proc-converting-non-managed-topics-{context}']
-= (Preview) Enabling topic management for existing Kafka topics
+= Enabling topic management for existing Kafka topics
 
 [role="_abstract"]
 This procedure describes how to enable topic management for topics that are not currently managed through the `KafkaTopic` resource.
 You do this by creating a matching `KafkaTopic` resource.
-
-You can perform this task if you are using unidirectional topic management.
-
-NOTE: Unidirectional topic management is available as a preview. 
-Unidirectional topic management is not enabled by default, so you must xref:ref-operator-unidirectional-topic-operator-feature-gate-{context}[enable the `UnidirectionalTopicOperator` feature gate] to be able to use it.
 
 .Prerequisites
 

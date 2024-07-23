@@ -5,7 +5,7 @@
     <parent>
         <artifactId>strimzi</artifactId>
         <groupId>io.strimzi</groupId>
-        <version>0.38.0-SNAPSHOT</version>
+        <version>0.42.0</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -37,6 +37,11 @@
                 <artifactId>kafka-raft</artifactId>
                 <version>${kafka-metadata-version}</version>
             </dependency>
+            <dependency>
+                <groupId>org.apache.kafka</groupId>
+                <artifactId>kafka-server-common</artifactId>
+                <version>${kafka-metadata-version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -64,10 +69,6 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.scala-lang</groupId>
-            <artifactId>scala-library</artifactId>
         </dependency>
     </dependencies>
 

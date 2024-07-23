@@ -4,13 +4,19 @@
  */
 package io.strimzi.operator.common.model;
 
+import io.fabric8.kubernetes.api.model.ConfigMap;
+import io.fabric8.kubernetes.api.model.ConfigMapBuilder;
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBuilder;
+import io.fabric8.kubernetes.api.model.PodBuilder;
+import io.fabric8.kubernetes.api.model.Secret;
+import io.fabric8.kubernetes.api.model.SecretBuilder;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
 import org.junit.jupiter.api.Test;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -23,7 +29,7 @@ public class LabelsTest {
     public void testParseValidLabels()   {
         String validLabels = "key1=value1,key2=value2";
 
-        Map sourceMap = new HashMap<String, String>(2);
+        Map<String, String> sourceMap = new HashMap<>(2);
         sourceMap.put("key1", "value1");
         sourceMap.put("key2", "value2");
         Labels expected = Labels.fromMap(sourceMap);
@@ -82,7 +88,7 @@ public class LabelsTest {
 
     @Test
     public void testStrimziSelectorLabels()   {
-        Map sourceMap = new HashMap<String, String>(5);
+        Map<String, String> sourceMap = new HashMap<>(5);
         sourceMap.put(Labels.STRIMZI_CLUSTER_LABEL, "my-cluster");
         sourceMap.put("key1", "value1");
         sourceMap.put(Labels.STRIMZI_KIND_LABEL, "Kafka");
@@ -91,7 +97,7 @@ public class LabelsTest {
         sourceMap.put(Labels.STRIMZI_DISCOVERY_LABEL, "true");
         Labels labels = Labels.fromMap(sourceMap);
 
-        Map expected = new HashMap<String, String>(2);
+        Map<String, String> expected = new HashMap<>(2);
         expected.put(Labels.STRIMZI_CLUSTER_LABEL, "my-cluster");
         expected.put(Labels.STRIMZI_KIND_LABEL, "Kafka");
         expected.put(Labels.STRIMZI_NAME_LABEL, "my-cluster-kafka");
@@ -101,7 +107,7 @@ public class LabelsTest {
 
     @Test
     public void testToLabelSelectorString()   {
-        Map sourceMap = new HashMap<String, String>(4);
+        Map<String, String> sourceMap = new HashMap<>(4);
         sourceMap.put(Labels.STRIMZI_CLUSTER_LABEL, "my-cluster");
         sourceMap.put(Labels.STRIMZI_KIND_LABEL, "Kafka");
         sourceMap.put(Labels.STRIMZI_NAME_LABEL, "my-cluster-kafka");
@@ -122,11 +128,11 @@ public class LabelsTest {
         assertThat(nullLabels.toMap(), is(start.toMap()));
 
         // Non-null values
-        Map userLabels = new HashMap<String, String>(2);
+        Map<String, String> userLabels = new HashMap<>(2);
         userLabels.put("key1", "value1");
         userLabels.put("key2", "value2");
 
-        Map<String, String> expected = new HashMap<String, String>();
+        Map<String, String> expected = new HashMap<>();
         expected.putAll(start.toMap());
         expected.putAll(userLabels);
 
@@ -136,7 +142,7 @@ public class LabelsTest {
 
     @Test
     public void testWithInvalidUserSuppliedLabels()   {
-        Map userLabelsWithStrimzi = new HashMap<String, String>(3);
+        Map<String, String> userLabelsWithStrimzi = new HashMap<>(3);
         userLabelsWithStrimzi.put("key1", "value1");
         userLabelsWithStrimzi.put("key2", "value2");
         userLabelsWithStrimzi.put(Labels.STRIMZI_DOMAIN + "something", "value3");
@@ -170,7 +176,7 @@ public class LabelsTest {
 
     @Test
     public void testFromResourceWithLabels()   {
-        Map<String, String> userProvidedLabels = new HashMap<String, String>(6);
+        Map<String, String> userProvidedLabels = new HashMap<>(6);
         userProvidedLabels.put(Labels.KUBERNETES_NAME_LABEL, "some-app");
         userProvidedLabels.put(Labels.KUBERNETES_INSTANCE_LABEL, "my-cluster");
         userProvidedLabels.put(Labels.KUBERNETES_PART_OF_LABEL, "some-other-application-name");
@@ -197,13 +203,49 @@ public class LabelsTest {
                 .endSpec()
                 .build();
 
-        Map<String, String> expectedLabels = new HashMap<String, String>(3);
+        Map<String, String> expectedLabels = new HashMap<>(3);
         expectedLabels.put("key1", "value1");
         expectedLabels.put("key2", "value2");
         expectedLabels.put(Labels.KUBERNETES_PART_OF_LABEL, "some-other-application-name");
 
         Labels l = Labels.fromResource(kafka);
         assertThat(l.toMap(), is(expectedLabels));
+    }
+    @Test
+    public void testFromResourceWithValidLabelsSecret() {
+        Map<String, String> labelsMap = new HashMap<>();
+        labelsMap.put(Labels.KUBERNETES_PART_OF_LABEL, "my-app");
+        Secret secret = new SecretBuilder().withNewMetadata().withLabels(labelsMap).endMetadata().build();
+        Labels labels = Labels.fromResource(secret);
+        assertThat(labels.toMap(), is(labelsMap));
+    }
+
+    @Test
+    public void testFromResourceWithExcludedLabelsConfigMap() {
+        Map<String, String> labelsMap = new HashMap<>();
+        labelsMap.put("app.kubernetes.io/managed-by", "strimzi");
+        ConfigMap configMap = new ConfigMapBuilder().withNewMetadata().withLabels(labelsMap).endMetadata().build();
+        Labels labels = Labels.fromResource(configMap);
+        assertThat(labels.toMap().isEmpty(), is(true));
+    }
+
+    @Test
+    public void testFromResourceWithMixedLabelsConfigMap() {
+        Map<String, String> labelsMap = new HashMap<>();
+        labelsMap.put("app.kubernetes.io/name", "my-app");
+        labelsMap.put("app.kubernetes.io/managed-by", "strimzi");
+        labelsMap.put("bob-app/strimzi", "strimzi");
+        ConfigMap configMap = new ConfigMapBuilder().withNewMetadata().withLabels(labelsMap).endMetadata().build();
+        Labels labels = Labels.fromResource(configMap);
+        assertThat(labels.toMap(), is(Collections.singletonMap("bob-app/strimzi", "strimzi")));
+    }
+
+    @Test
+    public void testFromResourceWithInvalidStrimziLabelsSecret() {
+        Map<String, String> labelsMap = new HashMap<>();
+        labelsMap.put(Labels.STRIMZI_DOMAIN + "something", "value");
+        Secret secret = new SecretBuilder().withNewMetadata().withLabels(labelsMap).endMetadata().build();
+        assertThrows(IllegalArgumentException.class, () -> Labels.fromResource(secret));
     }
 
     @Test
@@ -232,7 +274,6 @@ public class LabelsTest {
         String customResourceName = "my-cluster";
         String componentName = "kafka";
         String operatorName  = "my-operator";
-        String appName = "an-app";
 
         class ResourceWithMetadata implements HasMetadata {
 
@@ -291,5 +332,19 @@ public class LabelsTest {
         assertThat(Labels.getOrValidInstanceLabelValue("too-long-012345678901234567890123456789012345678901234567890123456789"), is("too-long-012345678901234567890123456789012345678901234567890123"));
         assertThat(Labels.getOrValidInstanceLabelValue("too-long-01234567890123456789012345678901234567890123456789012-456789"), is("too-long-01234567890123456789012345678901234567890123456789012"));
         assertThat(Labels.getOrValidInstanceLabelValue("too-long-01234567890123456789012345678901234567890123456789.---456789"), is("too-long-01234567890123456789012345678901234567890123456789"));
+    }
+
+    @Test
+    public void testBooleanLabel()  {
+        final String label = "my-label";
+
+        assertThat(Labels.booleanLabel(null, label, true), is(true));
+        assertThat(Labels.booleanLabel(new PodBuilder().build(), label, true), is(true));
+        assertThat(Labels.booleanLabel(new PodBuilder().withNewMetadata().withName("my-pod").endMetadata().build(), label, true), is(true));
+        assertThat(Labels.booleanLabel(new PodBuilder().withNewMetadata().withName("my-pod").addToLabels("not-my-label", "false").endMetadata().build(), label, true), is(true));
+        assertThat(Labels.booleanLabel(new PodBuilder().withNewMetadata().withName("my-pod").addToLabels(label, null).endMetadata().build(), label, true), is(true));
+        assertThat(Labels.booleanLabel(new PodBuilder().withNewMetadata().withName("my-pod").addToLabels(label, "true").endMetadata().build(), label, true), is(true));
+        assertThat(Labels.booleanLabel(new PodBuilder().withNewMetadata().withName("my-pod").addToLabels(label, "potato").endMetadata().build(), label, true), is(false));
+        assertThat(Labels.booleanLabel(new PodBuilder().withNewMetadata().withName("my-pod").addToLabels(label, "false").endMetadata().build(), label, true), is(false));
     }
 }

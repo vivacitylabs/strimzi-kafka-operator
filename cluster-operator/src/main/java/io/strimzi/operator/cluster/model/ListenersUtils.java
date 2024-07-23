@@ -4,15 +4,15 @@
  */
 package io.strimzi.operator.cluster.model;
 
-import io.strimzi.api.kafka.model.listener.KafkaListenerAuthenticationCustom;
-import io.strimzi.api.kafka.model.listener.KafkaListenerAuthenticationOAuth;
-import io.strimzi.api.kafka.model.listener.NodeAddressType;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListener;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerConfigurationBroker;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
-import io.strimzi.api.kafka.model.template.ExternalTrafficPolicy;
-import io.strimzi.api.kafka.model.template.IpFamily;
-import io.strimzi.api.kafka.model.template.IpFamilyPolicy;
+import io.strimzi.api.kafka.model.common.template.ExternalTrafficPolicy;
+import io.strimzi.api.kafka.model.common.template.IpFamily;
+import io.strimzi.api.kafka.model.common.template.IpFamilyPolicy;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListener;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerConfigurationBroker;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerAuthenticationCustom;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerAuthenticationOAuth;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
+import io.strimzi.api.kafka.model.kafka.listener.NodeAddressType;
 
 import java.util.Collections;
 import java.util.List;
@@ -575,6 +575,16 @@ public class ListenersUtils {
             return null;
         }
     }
+    
+    /**
+     * Finds publish not ready addresses configuration
+     *
+     * @param listener  Listener for which the publish not ready addresses value should be found
+     * @return          publish not ready addresses value or null if not specified
+     */
+    public static Boolean publishNotReadyAddresses(GenericKafkaListener listener)    {
+        return listener.getConfiguration() == null ? null : listener.getConfiguration().getPublishNotReadyAddresses();
+    }
 
     /**
      * Finds IP family policy
@@ -698,5 +708,35 @@ public class ListenersUtils {
         Integer advertisedPort = ListenersUtils.brokerAdvertisedPort(listener, nodeId);
 
         return String.valueOf(advertisedPort != null ? advertisedPort : port);
+    }
+
+    /**
+     * Returns bootstrap service external IPs
+     * 
+     * @param listener  Listener for which the external IPs should be found
+     * 
+     * @return  External IPs or null if not specified
+     */
+    public static List<String> bootstrapExternalIPs(GenericKafkaListener listener) {
+        return (listener.getConfiguration() != null && listener.getConfiguration().getBootstrap() != null)
+            ? listener.getConfiguration().getBootstrap().getExternalIPs()
+                : null;
+    }
+
+     /**
+     * Returns broker service external IPs
+     * 
+     * @param listener  Listener for which the external IPs should be found
+     * @param nodeId       Node ID for which we should get the configuration option
+     * 
+     * @return          External IPs or null if not specified
+     */
+    public static List<String> brokerExternalIPs(GenericKafkaListener listener, int nodeId) {
+        return (listener.getConfiguration() != null && listener.getConfiguration().getBrokers() != null)
+                ? listener.getConfiguration().getBrokers().stream()
+                    .filter(broker -> broker != null && broker.getBroker() != null && broker.getBroker() == nodeId && broker.getExternalIPs() != null)
+                    .map(GenericKafkaListenerConfigurationBroker::getExternalIPs)
+                    .findAny()
+                    .orElse(null) : null;
     }
 }

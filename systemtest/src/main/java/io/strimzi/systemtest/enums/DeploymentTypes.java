@@ -12,4 +12,6 @@ public enum DeploymentTypes {
     KafkaClients,
     DrainCleaner,
     Scraper,
+    AdminClient,
+    Minio,
 }

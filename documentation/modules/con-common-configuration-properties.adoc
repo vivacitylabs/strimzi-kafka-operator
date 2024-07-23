@@ -55,7 +55,7 @@ The combination is encapsulated in the `TLS_AES_256_GCM_SHA384` cipher suite spe
 
 The `ssl.enabled.protocols` property specifies the available TLS versions that can be used for secure communication between the cluster and its clients. 
 The `ssl.protocol` property sets the default TLS version for all connections, and it must be chosen from the enabled protocols.
-Use the `ssl.endpoint.identification.algorithm` property to enable or disable hostname verification. 
+Use the `ssl.endpoint.identification.algorithm` property to enable or disable hostname verification (configurable only in components based on Kafka clients - Kafka Connect, MirrorMaker 1/2, and Kafka Bridge).
 
 .Example SSL configuration
 [source,yaml,subs="attributes+"]
@@ -76,27 +76,34 @@ config:
 [id='con-common-configuration-trusted-certificates-{context}']
 == `trustedCertificates`
 
-Having set `tls` to configure TLS encryption, use the `trustedCertificates` property to provide a list of secrets with key names under which the certificates are stored in X.509 format.
+Use the `tls` and `trustedCertificates` properties to enable TLS encryption and specify secrets under which TLS certificates are stored in X.509 format.
+You can add this configuration to the Kafka Connect, Kafka MirrorMaker, and Kafka Bridge components for TLS connections to the Kafka cluster.
 
 You can use the secrets created by the Cluster Operator for the Kafka cluster,
 or you can create your own TLS certificate file, then create a `Secret` from the file:
 
+.Creating a secret
 [source,shell,subs=+quotes]
-kubectl create secret generic _MY-SECRET_ \
---from-file=_MY-TLS-CERTIFICATE-FILE.crt_
+kubectl create secret generic <my_secret> \
+--from-file=<my_tls_certificate_file.crt>
 
-.Example TLS encryption configuration
+* Replace `<my_secret>` with your secret name.
+* Replace `<my_tls_certificate_file.crt>` with the path to your TLS certificate file.
+
+Use the `pattern` property to include all files in the secret that match the pattern.
+Using the `pattern` property means that the custom resource does not need to be updated if certificate file names change.
+However, you can specify a specific file using the `certificate` property instead of the `pattern` property. 
+
+.Example TLS encryption configuration for components
 [source,yaml,subs=attributes+]
 ----
 tls:
   trustedCertificates:
     - secretName: my-cluster-cluster-cert
-      certificate: ca.crt
+      pattern: "*.crt"
     - secretName: my-cluster-cluster-cert
       certificate: ca2.crt
 ----
-
-If certificates are stored in the same secret, it can be listed multiple times.
 
 If you want to enable TLS encryption, but use the default set of public certification authorities shipped with Java,
 you can specify `trustedCertificates` as an empty array:
@@ -106,6 +113,17 @@ you can specify `trustedCertificates` as an empty array:
 ----
 tls:
   trustedCertificates: []
+----
+
+Similarly, you can use the `tlstrustedCertificates` property in the configuration for `oauth`, `keycloak`, and `opa` authentication and authorization types that integrate with authorization servers.
+The configuration sets up encrypted TLS connections to the authorization server.
+
+.Example TLS encryption configuration for authentication types
+[source,yaml,subs=attributes+]
+----
+tlsTrustedCertificates:
+  - secretName: oauth-server-ca
+    pattern: "*.crt"
 ----
 
 For information on configuring mTLS authentication, see the xref:type-KafkaClientAuthenticationTls-reference[`KafkaClientAuthenticationTls` schema reference].
@@ -254,11 +272,16 @@ You can specify which container image to use for a component using the `image` p
 * `Kafka.spec.zookeeper`
 * `Kafka.spec.entityOperator.topicOperator`
 * `Kafka.spec.entityOperator.userOperator`
-* `Kafka.spec.entityOperator.tlsSidecar`
+* `Kafka.spec.cruiseControl`
+* `Kafka.spec.kafkaExporter`
+* `Kafka.spec.kafkaBridge`
 * `KafkaConnect.spec`
 * `KafkaMirrorMaker.spec`
 * `KafkaMirrorMaker2.spec`
 * `KafkaBridge.spec`
+
+NOTE: Changing the Kafka image version does not automatically update the image versions for other Kafka components, such as Kafka Exporter.
+These components are not version dependent, so no additional configuration is necessary when updating the Kafka image version.
 
 *Configuring the `image` property for Kafka, Kafka Connect, and Kafka MirrorMaker*
 
@@ -268,12 +291,13 @@ The default images for the different Kafka versions are configured in the follow
 
 * `STRIMZI_KAFKA_IMAGES`
 * `STRIMZI_KAFKA_CONNECT_IMAGES`
-* `STRIMZI_KAFKA_MIRROR_MAKER_IMAGES`
+* `STRIMZI_KAFKA_MIRROR_MAKER2_IMAGES`
+* (Deprecated) `STRIMZI_KAFKA_MIRROR_MAKER_IMAGES`
 
-These environment variables contain mappings between the Kafka versions and their corresponding images.
-The mappings are used together with the `image` and `version` properties:
+These environment variables contain mappings between Kafka versions and corresponding images.
+The mappings are used together with the `image` and `version` properties to determine the image used:
 
-* If neither `image` nor `version` are given in the custom resource then the `version` will default to the Cluster Operator's default Kafka version, and the image will be the one corresponding to this version in the environment variable.
+* If neither `image` nor `version` are given in the custom resource, the `version` defaults to the Cluster Operator's default Kafka version, and the image used is the one corresponding to this version in the environment variable.
 
 * If `image` is given but `version` is not, then the given image is used and the `version` is assumed to be the Cluster Operator's default Kafka version.
 
@@ -281,7 +305,7 @@ The mappings are used together with the `image` and `version` properties:
 
 * If both `version` and `image` are given, then the given image is used. The image is assumed to contain a Kafka image with the given version.
 
-The `image` and `version` for the different components can be configured in the following properties:
+The `image` and `version` for the components can be configured in the following properties:
 
 * For Kafka in `spec.kafka.image` and `spec.kafka.version`.
 * For Kafka Connect and Kafka MirrorMaker in `spec.image` and `spec.version`.
@@ -292,28 +316,45 @@ If you need to change the images used for different versions of Kafka, it is pre
 
 *Configuring the `image` property in other resources*
 
-For the `image` property in the other custom resources, the given value will be used during deployment.
-If the `image` property is missing, the `image` specified in the Cluster Operator configuration will be used.
-If the `image` name is not defined in the Cluster Operator configuration, then the default value will be used.
+For the `image` property in the custom resources for other components, the given value is used during deployment.
+If the `image` property is not set, the container `image` specified as an environment variable in the Cluster Operator configuration is used.
+If an `image` name is not defined in the Cluster Operator configuration, then a default value is used.
 
-* For Topic Operator:
-. Container image specified in the `STRIMZI_DEFAULT_TOPIC_OPERATOR_IMAGE` environment variable from the Cluster Operator configuration.
-. `{DockerTopicOperator}` container image.
-* For User Operator:
-. Container image specified in the `STRIMZI_DEFAULT_USER_OPERATOR_IMAGE` environment variable from the Cluster Operator configuration.
-. `{DockerUserOperator}` container image.
-* For Entity Operator TLS sidecar:
-. Container image specified in the `STRIMZI_DEFAULT_TLS_SIDECAR_ENTITY_OPERATOR_IMAGE` environment variable from the Cluster Operator configuration.
-. `{DockerEntityOperatorStunnel}` container image.
-* For Kafka Exporter:
-. Container image specified in the `STRIMZI_DEFAULT_KAFKA_EXPORTER_IMAGE` environment variable from the Cluster Operator configuration.
-. `{DockerKafka}` container image.
-* For Kafka Bridge:
-. Container image specified in the `STRIMZI_DEFAULT_KAFKA_BRIDGE_IMAGE` environment variable from the Cluster Operator configuration.
-. `{DockerKafkaBridge}` container image.
-* For Kafka broker initializer:
-. Container image specified in the `STRIMZI_DEFAULT_KAFKA_INIT_IMAGE` environment variable from the Cluster Operator configuration.
-. `{DockerKafkaInit}` container image.
+For more information on image environment variables, see link:{BookURLDeploying}#ref-operator-cluster-str[Configuring the Cluster Operator^]. 
+
+.Image environment variables and defaults
+[cols="2,4m,4m",options="header"]
+|===
+
+| Component              
+| Environment variable                                                                            
+| Default image
+
+| Topic Operator      
+| STRIMZI_DEFAULT_TOPIC_OPERATOR_IMAGE                                                 
+| {DockerTopicOperator}
+
+| User Operator
+| STRIMZI_DEFAULT_USER_OPERATOR_IMAGE
+| {DockerUserOperator}
+
+| Kafka Exporter
+| STRIMZI_DEFAULT_KAFKA_EXPORTER_IMAGE
+| {DockerKafka}
+
+| Cruise Control
+| STRIMZI_DEFAULT_CRUISE_CONTROL_IMAGE
+| {DockerKafka}
+
+| Kafka Bridge
+| STRIMZI_DEFAULT_KAFKA_BRIDGE_IMAGE
+| {DockerKafkaBridge}
+
+| Kafka initializer
+| STRIMZI_DEFAULT_KAFKA_INIT_IMAGE
+| {DockerKafkaInit}
+
+|===
 
 .Example container image configuration
 [source,yaml,subs=attributes+]
@@ -433,7 +474,7 @@ The following Strimzi components run inside a Java Virtual Machine (JVM):
 * Apache ZooKeeper
 * Apache Kafka Connect
 * Apache Kafka MirrorMaker
-* Strimzi Kafka Bridge
+* Kafka Bridge
 
 To optimize their performance on different platforms and architectures, you configure the `jvmOptions` property in the following resources:
 
@@ -548,10 +589,10 @@ For such containers, the requested memory should be significantly higher than th
 ----
 jvmOptions:
   "-XX":
-    "UseG1GC": true
-    "MaxGCPauseMillis": 20
-    "InitiatingHeapOccupancyPercent": 35
-    "ExplicitGCInvokesConcurrent": true
+    "UseG1GC": "true"
+    "MaxGCPauseMillis": "20"
+    "InitiatingHeapOccupancyPercent": "35"
+    "ExplicitGCInvokesConcurrent": "true"
 ----
 
 .JVM options resulting from the `-XX` configuration

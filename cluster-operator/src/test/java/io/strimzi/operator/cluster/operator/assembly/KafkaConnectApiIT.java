@@ -4,11 +4,6 @@
  */
 package io.strimzi.operator.cluster.operator.assembly;
 
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-
 import io.strimzi.api.kafka.model.connect.ConnectorPlugin;
 import io.strimzi.operator.common.BackOff;
 import io.strimzi.operator.common.Reconciliation;
@@ -29,6 +24,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.extension.ExtendWith;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import static java.util.Collections.emptyMap;
 import static java.util.Collections.singletonList;
@@ -54,12 +54,12 @@ public class KafkaConnectApiIT {
 
     @BeforeEach
     public void beforeEach() throws InterruptedException {
-        // Start a 3 node connect cluster
+        // Start a 1 node connect cluster
         connectCluster = new ConnectCluster()
                 .usingBrokers(cluster.getBootstrapServers())
-                .addConnectNodes(3);
+                .addConnectNodes(1);
         connectCluster.startup();
-        port = connectCluster.getPort(2);
+        port = connectCluster.getPort(0);
     }
 
     @AfterEach
@@ -129,7 +129,7 @@ public class KafkaConnectApiIT {
                         client.status(Reconciliation.DUMMY_RECONCILIATION, "localhost", port, "test").onComplete(result -> {
                             if (result.succeeded()) {
                                 Map<String, Object> status = result.result();
-                                if ("RUNNING".equals(((Map) status.getOrDefault("connector", emptyMap())).get("state"))) {
+                                if ("RUNNING".equals(((Map<String, Object>) status.getOrDefault("connector", emptyMap())).get("state"))) {
                                     promise.complete(status);
                                     return;
                                 } else {
@@ -151,10 +151,10 @@ public class KafkaConnectApiIT {
                 assertThat(connectorStatus.get("state"), is("RUNNING"));
                 assertThat(connectorStatus.get("worker_id").toString(), startsWith("localhost:"));
 
-                List<Map> tasks = (List<Map>) status.get("tasks");
-                for (Map an : tasks) {
+                List<Map<String, String>> tasks = (List<Map<String, String>>) status.get("tasks");
+                for (Map<String, String> an : tasks) {
                     assertThat(an.get("state"), is("RUNNING"));
-                    assertThat(an.get("worker_id").toString(), startsWith("localhost:"));
+                    assertThat(an.get("worker_id"), startsWith("localhost:"));
                 }
             })))
             .compose(status -> client.getConnectorConfig(Reconciliation.DUMMY_RECONCILIATION, new BackOff(10), "localhost", port, "test"))
@@ -239,7 +239,6 @@ public class KafkaConnectApiIT {
     public void testChangeLoggers(VertxTestContext context) {
         String desired = "log4j.rootLogger=TRACE, CONSOLE\n" +
                 "log4j.logger.org.apache.zookeeper=WARN\n" +
-                "log4j.logger.org.I0Itec.zkclient=INFO\n" +
                 "log4j.logger.org.reflections.Reflection=INFO\n" +
                 "log4j.logger.org.reflections=FATAL\n" +
                 "log4j.logger.foo=WARN\n" +
@@ -258,7 +257,6 @@ public class KafkaConnectApiIT {
                         .onComplete(context.succeeding(map -> context.verify(() -> {
                             assertThat(map.get("root"), is("TRACE"));
                             assertThat(map.get("org.apache.zookeeper"), is("WARN"));
-                            assertThat(map.get("org.I0Itec.zkclient"), is("INFO"));
                             assertThat(map.get("org.reflections"), is("FATAL"));
                             assertThat(map.get("org.reflections.Reflection"), is("INFO"));
                             assertThat(map.get("org.reflections.Reflection"), is("INFO"));
@@ -279,7 +277,6 @@ public class KafkaConnectApiIT {
         String rootLevel = "TRACE";
         String desired = "log4j.rootLogger=" + rootLevel + ", CONSOLE\n" +
                 "log4j.logger.oorg.apache.zookeeper=WARN\n" +
-                "log4j.logger.oorg.I0Itec.zkclient=INFO\n" +
                 "log4j.logger.oorg.reflections.Reflection=INFO\n" +
                 "log4j.logger.oorg.reflections=FATAL\n" +
                 "log4j.logger.foo=WARN\n" +

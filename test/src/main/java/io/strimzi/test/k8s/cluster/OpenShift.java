@@ -5,9 +5,9 @@
 package io.strimzi.test.k8s.cluster;
 
 import io.strimzi.test.executor.Exec;
-import io.strimzi.test.k8s.exceptions.KubeClusterException;
 import io.strimzi.test.k8s.cmdClient.KubeCmdClient;
 import io.strimzi.test.k8s.cmdClient.Oc;
+import io.strimzi.test.k8s.exceptions.KubeClusterException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -30,7 +30,7 @@ public class OpenShift implements KubeCluster {
     public boolean isClusterUp() {
         List<String> cmd = Arrays.asList(CMD, "status", "-n", DEFAULT_NAMESPACE);
         try {
-            return Exec.exec(cmd).exitStatus() && Exec.exec(CMD, "api-resources").out().contains("openshift.io");
+            return Exec.exec(cmd).exitStatus() && Exec.exec(CMD, "api-versions").out().contains("openshift.io");
         } catch (KubeClusterException e) {
             LOGGER.debug("'" + String.join(" ", cmd) + "' failed. Please double check connectivity to your cluster!");
             LOGGER.debug(e);

@@ -5,13 +5,11 @@
 package io.strimzi.operator.cluster.model;
 
 import io.fabric8.kubernetes.api.model.ProbeBuilder;
-import io.strimzi.api.kafka.model.HasLivenessProbe;
-import io.strimzi.api.kafka.model.HasReadinessProbe;
-import io.strimzi.api.kafka.model.HasStartupProbe;
-import io.strimzi.api.kafka.model.Probe;
-import io.strimzi.api.kafka.model.TlsSidecar;
+import io.strimzi.api.kafka.model.common.HasLivenessProbe;
+import io.strimzi.api.kafka.model.common.HasReadinessProbe;
+import io.strimzi.api.kafka.model.common.HasStartupProbe;
+import io.strimzi.api.kafka.model.common.Probe;
 
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -19,15 +17,10 @@ import java.util.List;
  */
 public class ProbeUtils {
     /**
-     * Default healhtcheck options used by most of our operands with the exception of Mirror Maker (1 and 2), Connect,
+     * Default healthcheck options used by most of our operands with the exception of Mirror Maker (1 and 2), Connect,
      * and User / Topic operators.
      */
-    public static final Probe DEFAULT_HEALTHCHECK_OPTIONS = new io.strimzi.api.kafka.model.ProbeBuilder().withTimeoutSeconds(5).withInitialDelaySeconds(15).build();
-
-    private static final io.strimzi.api.kafka.model.Probe DEFAULT_TLS_SIDECAR_OPTIONS = new io.strimzi.api.kafka.model.ProbeBuilder()
-            .withInitialDelaySeconds(TlsSidecar.DEFAULT_HEALTHCHECK_DELAY)
-            .withTimeoutSeconds(TlsSidecar.DEFAULT_HEALTHCHECK_TIMEOUT)
-            .build();
+    public static final Probe DEFAULT_HEALTHCHECK_OPTIONS = new io.strimzi.api.kafka.model.common.ProbeBuilder().withTimeoutSeconds(5).withInitialDelaySeconds(15).build();
 
     private ProbeUtils() { }
 
@@ -41,8 +34,7 @@ public class ProbeUtils {
         if (probeConfig == null) {
             throw new IllegalArgumentException();
         }
-
-
+        
         ProbeBuilder pb =  new ProbeBuilder()
                 .withTimeoutSeconds(probeConfig.getTimeoutSeconds())
                 .withPeriodSeconds(probeConfig.getPeriodSeconds())
@@ -147,21 +139,5 @@ public class ProbeUtils {
         } else {
             return defaultOptions;
         }
-    }
-
-    protected static io.fabric8.kubernetes.api.model.Probe tlsSidecarReadinessProbe(TlsSidecar tlsSidecar) {
-        Probe tlsSidecarReadinessProbe = DEFAULT_TLS_SIDECAR_OPTIONS;
-        if (tlsSidecar != null && tlsSidecar.getReadinessProbe() != null) {
-            tlsSidecarReadinessProbe = tlsSidecar.getReadinessProbe();
-        }
-        return ProbeUtils.execProbe(tlsSidecarReadinessProbe, Arrays.asList("/opt/stunnel/stunnel_healthcheck.sh", "2181"));
-    }
-
-    protected static io.fabric8.kubernetes.api.model.Probe tlsSidecarLivenessProbe(TlsSidecar tlsSidecar) {
-        Probe tlsSidecarLivenessProbe = DEFAULT_TLS_SIDECAR_OPTIONS;
-        if (tlsSidecar != null && tlsSidecar.getLivenessProbe() != null) {
-            tlsSidecarLivenessProbe = tlsSidecar.getLivenessProbe();
-        }
-        return ProbeUtils.execProbe(tlsSidecarLivenessProbe, Arrays.asList("/opt/stunnel/stunnel_healthcheck.sh", "2181"));
     }
 }

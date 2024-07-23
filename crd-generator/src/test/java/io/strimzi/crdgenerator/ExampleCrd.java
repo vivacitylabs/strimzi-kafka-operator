@@ -7,10 +7,13 @@ package io.strimzi.crdgenerator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import io.fabric8.kubernetes.api.model.Affinity;
+import io.fabric8.kubernetes.api.model.Quantity;
 import io.fabric8.kubernetes.client.CustomResource;
+import io.strimzi.crdgenerator.annotations.AddedIn;
 import io.strimzi.crdgenerator.annotations.Crd;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.strimzi.crdgenerator.annotations.Example;
@@ -52,8 +55,15 @@ import java.util.Map;
         }
     )
 )
-@OneOf({@OneOf.Alternative(@OneOf.Alternative.Property("either")), @OneOf.Alternative(@OneOf.Alternative.Property("or"))})
+@OneOf({@OneOf.Alternative(@OneOf.Alternative.Property("either")), @OneOf.Alternative(@OneOf.Alternative.Property("or")), @OneOf.Alternative({@OneOf.Alternative.Property("mapStringString"), @OneOf.Alternative.Property("mapStringObject")})})
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonPropertyOrder({"ignored", "stringProperty", "intProperty", "longProperty", "booleanProperty", "normalEnum", "customisedEnum",
+    "objectProperty", "mapStringObject", "mapStringString", "mapStringQuantity", "polymorphicProperty", "affinity", "fieldProperty",
+    "arrayProperty", "arrayProperty2", "listOfInts", "listOfInts2", "listOfObjects", "listOfPolymorphic",
+    "rawList", "listOfRawList", "arrayOfList", "arrayOfRawList", "listOfArray", "arrayOfTypeVar", "listOfTypeVar",
+    "arrayOfBoundTypeVar", "listOfBoundTypeVar", "arrayOfBoundTypeVar2", "listOfBoundTypeVar2",
+    "listOfWildcardTypeVar1", "listOfWildcardTypeVar2", "listOfWildcardTypeVar3", "listOfWildcardTypeVar4",
+    "listOfCustomizedEnum", "listOfNormalEnum", "listOfMaps", "either", "or", "status", "spec"})
 public class ExampleCrd<T, U extends Number, V extends U> extends CustomResource {
 
     private String ignored;
@@ -131,6 +141,8 @@ public class ExampleCrd<T, U extends Number, V extends U> extends CustomResource
     public String or;
 
     @Description("Example of complex type.")
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonPropertyOrder({"foo", "bar"})
     public static class ObjectProperty {
         private String foo;
         private String bar;
@@ -152,7 +164,11 @@ public class ExampleCrd<T, U extends Number, V extends U> extends CustomResource
         }
     }
 
-    private Map<String, Object> mapProperty;
+    private Map<String, Object> mapStringObject;
+
+    private Map<String, String> mapStringString;
+
+    private Map<String, Quantity> mapStringQuantity;
 
     private PolymorphicTop polymorphicProperty;
 
@@ -162,6 +178,7 @@ public class ExampleCrd<T, U extends Number, V extends U> extends CustomResource
         @JsonSubTypes.Type(value = PolymorphicLeft.class, name = "left"),
         @JsonSubTypes.Type(value = PolymorphicRight.class, name = "right")
     })
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public abstract static class PolymorphicTop {
         private String discrim;
         private String commonProperty;
@@ -183,6 +200,8 @@ public class ExampleCrd<T, U extends Number, V extends U> extends CustomResource
         }
     }
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonPropertyOrder({"discrim", "commonProperty", "leftProperty"})
     public static class PolymorphicLeft extends PolymorphicTop {
         private String leftProperty;
 
@@ -196,11 +215,14 @@ public class ExampleCrd<T, U extends Number, V extends U> extends CustomResource
         }
 
         @Override
+        @JsonInclude(JsonInclude.Include.NON_NULL)
         public String getDiscrim() {
             return "left";
         }
     }
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonPropertyOrder({"discrim", "commonProperty", "rightProperty"})
     public static class PolymorphicRight extends PolymorphicTop {
         private String rightProperty;
 
@@ -243,6 +265,7 @@ public class ExampleCrd<T, U extends Number, V extends U> extends CustomResource
     @Description("An example int property")
     @Example("42")
     @Minimum(42)
+    @AddedIn("0.0.1")
     public int getIntProperty() {
         return intProperty;
     }
@@ -278,12 +301,28 @@ public class ExampleCrd<T, U extends Number, V extends U> extends CustomResource
         this.objectProperty = objectProperty;
     }
 
-    public Map<String, Object> getMapProperty() {
-        return mapProperty;
+    public Map<String, Object> getMapStringObject() {
+        return mapStringObject;
     }
 
-    public void setMapProperty(Map<String, Object> mapProperty) {
-        this.mapProperty = mapProperty;
+    public void setMapStringObject(Map<String, Object> mapStringObject) {
+        this.mapStringObject = mapStringObject;
+    }
+
+    public Map<String, String> getMapStringString() {
+        return mapStringString;
+    }
+
+    public void setMapStringString(Map<String, String> mapStringString) {
+        this.mapStringString = mapStringString;
+    }
+
+    public Map<String, Quantity> getMapStringQuantity() {
+        return mapStringQuantity;
+    }
+
+    public void setMapStringQuantity(Map<String, Quantity> mapStringQuantity) {
+        this.mapStringQuantity = mapStringQuantity;
     }
 
     public PolymorphicTop getPolymorphicProperty() {

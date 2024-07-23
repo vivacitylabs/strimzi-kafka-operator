@@ -14,19 +14,19 @@ import io.fabric8.kubernetes.api.model.Service;
 import io.fabric8.kubernetes.api.model.networking.v1.Ingress;
 import io.fabric8.kubernetes.api.model.policy.v1.PodDisruptionBudget;
 import io.fabric8.openshift.api.model.Route;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBuilder;
-import io.strimzi.api.kafka.model.StrimziPodSet;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerConfigurationBrokerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
+import io.strimzi.api.kafka.model.kafka.JbodStorageBuilder;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
+import io.strimzi.api.kafka.model.kafka.PersistentClaimStorageBuilder;
+import io.strimzi.api.kafka.model.kafka.Storage;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerConfigurationBrokerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePool;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePoolBuilder;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePoolStatus;
 import io.strimzi.api.kafka.model.nodepool.ProcessRoles;
-import io.strimzi.api.kafka.model.storage.JbodStorageBuilder;
-import io.strimzi.api.kafka.model.storage.PersistentClaimStorageBuilder;
-import io.strimzi.api.kafka.model.storage.Storage;
+import io.strimzi.api.kafka.model.podset.StrimziPodSet;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
 import io.strimzi.operator.cluster.model.nodepools.NodeIdAssignment;
 import io.strimzi.operator.cluster.model.nodepools.NodePoolUtils;
@@ -92,7 +92,7 @@ public class KafkaClusterWithPoolsTest {
             Reconciliation.DUMMY_RECONCILIATION,
             KAFKA,
             POOL_A,
-            new NodeIdAssignment(Set.of(0, 1, 2), Set.of(0, 1, 2), Set.of(), Set.of()),
+            new NodeIdAssignment(Set.of(0, 1, 2), Set.of(0, 1, 2), Set.of(), Set.of(), Set.of()),
             null,
             OWNER_REFERENCE,
             SHARED_ENV_PROVIDER
@@ -115,7 +115,7 @@ public class KafkaClusterWithPoolsTest {
             Reconciliation.DUMMY_RECONCILIATION,
             KAFKA,
             POOL_B,
-            new NodeIdAssignment(Set.of(10, 11), Set.of(10, 11), Set.of(), Set.of()),
+            new NodeIdAssignment(Set.of(10, 11), Set.of(10, 11), Set.of(), Set.of(), Set.of()),
             null,
             OWNER_REFERENCE,
             SHARED_ENV_PROVIDER
@@ -128,7 +128,8 @@ public class KafkaClusterWithPoolsTest {
                 KAFKA,
                 List.of(KAFKA_POOL_A, KAFKA_POOL_B),
                 VERSIONS,
-                false,
+                KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE,
+                KafkaMetadataConfigurationState.ZK,
                 null, SHARED_ENV_PROVIDER
         );
 
@@ -157,10 +158,14 @@ public class KafkaClusterWithPoolsTest {
         assertThat(statuses.get("pool-a").getLabelSelector(), is("strimzi.io/cluster=my-cluster,strimzi.io/name=my-cluster-kafka,strimzi.io/kind=Kafka,strimzi.io/pool-name=pool-a"));
         assertThat(statuses.get("pool-a").getNodeIds().size(), is(3));
         assertThat(statuses.get("pool-a").getNodeIds(), hasItems(0, 1, 2));
+        assertThat(statuses.get("pool-a").getRoles().size(), is(1));
+        assertThat(statuses.get("pool-a").getRoles(), hasItems(ProcessRoles.BROKER));
         assertThat(statuses.get("pool-b").getReplicas(), is(2));
         assertThat(statuses.get("pool-b").getLabelSelector(), is("strimzi.io/cluster=my-cluster,strimzi.io/name=my-cluster-kafka,strimzi.io/kind=Kafka,strimzi.io/pool-name=pool-b"));
         assertThat(statuses.get("pool-b").getNodeIds().size(), is(2));
         assertThat(statuses.get("pool-b").getNodeIds(), hasItems(10, 11));
+        assertThat(statuses.get("pool-b").getRoles().size(), is(1));
+        assertThat(statuses.get("pool-b").getRoles(), hasItems(ProcessRoles.BROKER));
     }
 
     @Test
@@ -170,7 +175,8 @@ public class KafkaClusterWithPoolsTest {
                 KAFKA,
                 List.of(KAFKA_POOL_A, KAFKA_POOL_B),
                 VERSIONS,
-                false,
+                KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE,
+                KafkaMetadataConfigurationState.ZK,
                 null, SHARED_ENV_PROVIDER
         );
 
@@ -194,7 +200,8 @@ public class KafkaClusterWithPoolsTest {
                 kafka,
                 List.of(KAFKA_POOL_A, KAFKA_POOL_B),
                 VERSIONS,
-                false,
+                KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE,
+                KafkaMetadataConfigurationState.ZK,
                 null, SHARED_ENV_PROVIDER
         );
 
@@ -218,7 +225,8 @@ public class KafkaClusterWithPoolsTest {
                 kafka,
                 List.of(KAFKA_POOL_A, KAFKA_POOL_B),
                 VERSIONS,
-                false,
+                KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE,
+                KafkaMetadataConfigurationState.ZK,
                 null, SHARED_ENV_PROVIDER
         );
 
@@ -257,7 +265,8 @@ public class KafkaClusterWithPoolsTest {
                 kafka,
                 List.of(KAFKA_POOL_A, KAFKA_POOL_B),
                 VERSIONS,
-                false,
+                KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE,
+                KafkaMetadataConfigurationState.ZK,
                 null, SHARED_ENV_PROVIDER
         );
 
@@ -285,7 +294,8 @@ public class KafkaClusterWithPoolsTest {
                 kafka,
                 List.of(KAFKA_POOL_A, KAFKA_POOL_B),
                 VERSIONS,
-                false,
+                KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE,
+                KafkaMetadataConfigurationState.ZK,
                 null, SHARED_ENV_PROVIDER
         );
 
@@ -305,7 +315,8 @@ public class KafkaClusterWithPoolsTest {
                 KAFKA,
                 List.of(KAFKA_POOL_A, KAFKA_POOL_B),
                 VERSIONS,
-                false,
+                KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE,
+                KafkaMetadataConfigurationState.ZK,
                 null, SHARED_ENV_PROVIDER
         );
 
@@ -320,7 +331,8 @@ public class KafkaClusterWithPoolsTest {
                 KAFKA,
                 List.of(KAFKA_POOL_A, KAFKA_POOL_B),
                 VERSIONS,
-                false,
+                KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE,
+                KafkaMetadataConfigurationState.ZK,
                 null, SHARED_ENV_PROVIDER
         );
 
@@ -359,15 +371,16 @@ public class KafkaClusterWithPoolsTest {
                 KAFKA,
                 List.of(KAFKA_POOL_A, KAFKA_POOL_B),
                 VERSIONS,
-                true,
+                KafkaVersionTestUtils.DEFAULT_KRAFT_VERSION_CHANGE,
+                KafkaMetadataConfigurationState.KRAFT,
                 null, SHARED_ENV_PROVIDER
         );
 
-        String configuration = kc.generatePerBrokerBrokerConfiguration(2, advertisedHostnames, advertisedPorts);
+        String configuration = kc.generatePerBrokerConfiguration(2, advertisedHostnames, advertisedPorts);
         assertThat(configuration, containsString("node.id=2\n"));
         assertThat(configuration, containsString("process.roles=broker\n"));
 
-        configuration = kc.generatePerBrokerBrokerConfiguration(10, advertisedHostnames, advertisedPorts);
+        configuration = kc.generatePerBrokerConfiguration(10, advertisedHostnames, advertisedPorts);
         assertThat(configuration, containsString("node.id=10\n"));
         assertThat(configuration, containsString("process.roles=broker\n"));
 
@@ -391,7 +404,8 @@ public class KafkaClusterWithPoolsTest {
                 KAFKA,
                 List.of(KAFKA_POOL_A, KAFKA_POOL_B),
                 VERSIONS,
-                false,
+                KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE,
+                KafkaMetadataConfigurationState.ZK,
                 null, SHARED_ENV_PROVIDER
         );
 
@@ -432,8 +446,8 @@ public class KafkaClusterWithPoolsTest {
 
         // Test exception being raised when only one broker is present
         InvalidResourceException ex = assertThrows(InvalidResourceException.class, () -> {
-            List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafkaAssembly, List.of(poolA), Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-            KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafkaAssembly, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+            List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafkaAssembly, List.of(poolA), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+            KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafkaAssembly, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
         });
 
         assertThat(ex.getMessage(), is("Kafka " + NAMESPACE + "/" + CLUSTER_NAME + " has invalid configuration. " +
@@ -448,8 +462,8 @@ public class KafkaClusterWithPoolsTest {
                 .build();
 
         assertDoesNotThrow(() -> {
-            List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafkaAssembly, List.of(poolA, poolB), Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-            KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafkaAssembly, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+            List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafkaAssembly, List.of(poolA, poolB), Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+            KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafkaAssembly, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
         });
     }
 }

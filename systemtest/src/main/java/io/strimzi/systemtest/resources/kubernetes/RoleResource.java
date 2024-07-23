@@ -6,13 +6,12 @@ package io.strimzi.systemtest.resources.kubernetes;
 
 import io.fabric8.kubernetes.api.model.rbac.Role;
 import io.fabric8.kubernetes.api.model.rbac.RoleBuilder;
-import io.strimzi.systemtest.Constants;
+import io.strimzi.systemtest.TestConstants;
 import io.strimzi.systemtest.resources.ResourceManager;
 import io.strimzi.systemtest.resources.ResourceType;
 import io.strimzi.test.TestUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.junit.jupiter.api.extension.ExtensionContext;
 
 public class RoleResource implements ResourceType<Role> {
 
@@ -20,7 +19,7 @@ public class RoleResource implements ResourceType<Role> {
 
     @Override
     public String getKind() {
-        return Constants.ROLE;
+        return TestConstants.ROLE;
     }
     @Override
     public Role get(String namespace, String name) {
@@ -45,11 +44,11 @@ public class RoleResource implements ResourceType<Role> {
         return resource != null && get(resource.getMetadata().getNamespace(), resource.getMetadata().getName()) != null;
     }
 
-    public static void role(ExtensionContext extensionContext, String yamlPath, String namespace) {
+    public static void role(String yamlPath, String namespace) {
         LOGGER.info("Creating Role: {}/{}", namespace, yamlPath);
         Role role = getRoleFromYaml(yamlPath);
 
-        ResourceManager.getInstance().createResourceWithWait(extensionContext, new RoleBuilder(role)
+        ResourceManager.getInstance().createResourceWithWait(new RoleBuilder(role)
             .editMetadata()
                 .withNamespace(namespace)
             .endMetadata()

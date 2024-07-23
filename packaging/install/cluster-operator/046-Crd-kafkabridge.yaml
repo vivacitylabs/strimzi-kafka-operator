@@ -47,6 +47,14 @@ spec:
       openAPIV3Schema:
         type: object
         properties:
+          apiVersion:
+            type: string
+            description: "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources"
+          kind:
+            type: string
+            description: "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds"
+          metadata:
+            type: object
           spec:
             type: object
             properties:
@@ -56,7 +64,7 @@ spec:
                 description: The number of pods in the `Deployment`.  Defaults to `1`.
               image:
                 type: string
-                description: The docker image for the pods.
+                description: "The container image used for Kafka Bridge pods. If no image name is explicitly specified, the image name corresponds to the image specified in the Cluster Operator configuration. If an image name is not defined in the Cluster Operator configuration, a default value is used."
               bootstrapServers:
                 type: string
                 description: A list of host:port pairs for establishing the initial connection to the Kafka cluster.
@@ -68,14 +76,25 @@ spec:
                     items:
                       type: object
                       properties:
-                        certificate:
-                          type: string
-                          description: The name of the file certificate in the Secret.
                         secretName:
                           type: string
                           description: The name of the Secret containing the certificate.
+                        certificate:
+                          type: string
+                          description: The name of the file certificate in the secret.
+                        pattern:
+                          type: string
+                          description: "Pattern for the certificate files in the secret. Use the link:https://en.wikipedia.org/wiki/Glob_(programming)[_glob syntax_] for the pattern. All files in the secret that match the pattern are used."
+                      oneOf:
+                      - properties:
+                          certificate: {}
+                        required:
+                        - certificate
+                      - properties:
+                          pattern: {}
+                        required:
+                        - pattern
                       required:
-                      - certificate
                       - secretName
                     description: Trusted certificates for TLS connection.
                 description: TLS configuration for connecting Kafka Bridge to the cluster.
@@ -104,19 +123,19 @@ spec:
                   certificateAndKey:
                     type: object
                     properties:
+                      secretName:
+                        type: string
+                        description: The name of the Secret containing the certificate.
                       certificate:
                         type: string
                         description: The name of the file certificate in the Secret.
                       key:
                         type: string
                         description: The name of the private key in the Secret.
-                      secretName:
-                        type: string
-                        description: The name of the Secret containing the certificate.
                     required:
+                    - secretName
                     - certificate
                     - key
-                    - secretName
                     description: Reference to the `Secret` which holds the certificate and private key pair.
                   clientId:
                     type: string
@@ -149,21 +168,24 @@ spec:
                   httpRetryPauseMs:
                     type: integer
                     description: "The pause to take before retrying a failed HTTP request. If not set, the default is to not pause at all but to immediately repeat a request."
+                  includeAcceptHeader:
+                    type: boolean
+                    description: Whether the Accept header should be set in requests to the authorization servers. The default value is `true`.
                   maxTokenExpirySeconds:
                     type: integer
                     description: Set or limit time-to-live of the access tokens to the specified number of seconds. This should be set if the authorization server returns opaque tokens.
                   passwordSecret:
                     type: object
                     properties:
-                      password:
-                        type: string
-                        description: The name of the key in the Secret under which the password is stored.
                       secretName:
                         type: string
                         description: The name of the Secret containing the password.
+                      password:
+                        type: string
+                        description: The name of the key in the Secret under which the password is stored.
                     required:
-                    - password
                     - secretName
+                    - password
                     description: Reference to the `Secret` which holds the password.
                   readTimeoutSeconds:
                     type: integer
@@ -189,14 +211,25 @@ spec:
                     items:
                       type: object
                       properties:
-                        certificate:
-                          type: string
-                          description: The name of the file certificate in the Secret.
                         secretName:
                           type: string
                           description: The name of the Secret containing the certificate.
+                        certificate:
+                          type: string
+                          description: The name of the file certificate in the secret.
+                        pattern:
+                          type: string
+                          description: "Pattern for the certificate files in the secret. Use the link:https://en.wikipedia.org/wiki/Glob_(programming)[_glob syntax_] for the pattern. All files in the secret that match the pattern are used."
+                      oneOf:
+                      - properties:
+                          certificate: {}
+                        required:
+                        - certificate
+                      - properties:
+                          pattern: {}
+                        required:
+                        - pattern
                       required:
-                      - certificate
                       - secretName
                     description: Trusted certificates for TLS connection to the OAuth server.
                   tokenEndpointUri:
@@ -253,6 +286,12 @@ spec:
               consumer:
                 type: object
                 properties:
+                  enabled:
+                    type: boolean
+                    description: "Whether the HTTP consumer should be enabled or disabled, default is enabled."
+                  timeoutSeconds:
+                    type: integer
+                    description: "The timeout in seconds for deleting inactive consumers, default is -1 (disabled)."
                   config:
                     x-kubernetes-preserve-unknown-fields: true
                     type: object
@@ -261,6 +300,9 @@ spec:
               producer:
                 type: object
                 properties:
+                  enabled:
+                    type: boolean
+                    description: "Whether the HTTP producer should be enabled or disabled, default is enabled."
                   config:
                     x-kubernetes-preserve-unknown-fields: true
                     type: object
@@ -277,27 +319,38 @@ spec:
                         name:
                           type: string
                   limits:
-                    x-kubernetes-preserve-unknown-fields: true
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: "^(\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))))?$"
+                      x-kubernetes-int-or-string: true
                     type: object
                   requests:
-                    x-kubernetes-preserve-unknown-fields: true
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: "^(\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\+|-)?(([0-9]+(\\.[0-9]*)?)|(\\.[0-9]+))))?$"
+                      x-kubernetes-int-or-string: true
                     type: object
                 description: CPU and memory resources to reserve.
               jvmOptions:
                 type: object
                 properties:
                   "-XX":
-                    x-kubernetes-preserve-unknown-fields: true
+                    additionalProperties:
+                      type: string
                     type: object
                     description: A map of -XX options to the JVM.
-                  "-Xms":
-                    type: string
-                    pattern: "^[0-9]+[mMgG]?$"
-                    description: -Xms option to to the JVM.
                   "-Xmx":
                     type: string
                     pattern: "^[0-9]+[mMgG]?$"
                     description: -Xmx option to to the JVM.
+                  "-Xms":
+                    type: string
+                    pattern: "^[0-9]+[mMgG]?$"
+                    description: -Xms option to to the JVM.
                   gcLoggingEnabled:
                     type: boolean
                     description: Specifies whether the Garbage Collection logging is enabled. The default is false.
@@ -318,7 +371,8 @@ spec:
                 type: object
                 properties:
                   loggers:
-                    x-kubernetes-preserve-unknown-fields: true
+                    additionalProperties:
+                      type: string
                     type: object
                     description: A Map from logger name to logger level.
                   type:
@@ -363,14 +417,14 @@ spec:
               livenessProbe:
                 type: object
                 properties:
-                  failureThreshold:
-                    type: integer
-                    minimum: 1
-                    description: Minimum consecutive failures for the probe to be considered failed after having succeeded. Defaults to 3. Minimum value is 1.
                   initialDelaySeconds:
                     type: integer
                     minimum: 0
                     description: The initial delay before first the health is first checked. Default to 15 seconds. Minimum value is 0.
+                  timeoutSeconds:
+                    type: integer
+                    minimum: 1
+                    description: The timeout for each attempted health check. Default to 5 seconds. Minimum value is 1.
                   periodSeconds:
                     type: integer
                     minimum: 1
@@ -379,22 +433,22 @@ spec:
                     type: integer
                     minimum: 1
                     description: Minimum consecutive successes for the probe to be considered successful after having failed. Defaults to 1. Must be 1 for liveness. Minimum value is 1.
-                  timeoutSeconds:
+                  failureThreshold:
                     type: integer
                     minimum: 1
-                    description: The timeout for each attempted health check. Default to 5 seconds. Minimum value is 1.
+                    description: Minimum consecutive failures for the probe to be considered failed after having succeeded. Defaults to 3. Minimum value is 1.
                 description: Pod liveness checking.
               readinessProbe:
                 type: object
                 properties:
-                  failureThreshold:
-                    type: integer
-                    minimum: 1
-                    description: Minimum consecutive failures for the probe to be considered failed after having succeeded. Defaults to 3. Minimum value is 1.
                   initialDelaySeconds:
                     type: integer
                     minimum: 0
                     description: The initial delay before first the health is first checked. Default to 15 seconds. Minimum value is 0.
+                  timeoutSeconds:
+                    type: integer
+                    minimum: 1
+                    description: The timeout for each attempted health check. Default to 5 seconds. Minimum value is 1.
                   periodSeconds:
                     type: integer
                     minimum: 1
@@ -403,10 +457,10 @@ spec:
                     type: integer
                     minimum: 1
                     description: Minimum consecutive successes for the probe to be considered successful after having failed. Defaults to 1. Must be 1 for liveness. Minimum value is 1.
-                  timeoutSeconds:
+                  failureThreshold:
                     type: integer
                     minimum: 1
-                    description: The timeout for each attempted health check. Default to 5 seconds. Minimum value is 1.
+                    description: Minimum consecutive failures for the probe to be considered failed after having succeeded. Defaults to 3. Minimum value is 1.
                 description: Pod readiness checking.
               template:
                 type: object
@@ -418,11 +472,13 @@ spec:
                         type: object
                         properties:
                           labels:
-                            x-kubernetes-preserve-unknown-fields: true
+                            additionalProperties:
+                              type: string
                             type: object
                             description: Labels added to the Kubernetes resource.
                           annotations:
-                            x-kubernetes-preserve-unknown-fields: true
+                            additionalProperties:
+                              type: string
                             type: object
                             description: Annotations added to the Kubernetes resource.
                         description: Metadata applied to the resource.
@@ -440,11 +496,13 @@ spec:
                         type: object
                         properties:
                           labels:
-                            x-kubernetes-preserve-unknown-fields: true
+                            additionalProperties:
+                              type: string
                             type: object
                             description: Labels added to the Kubernetes resource.
                           annotations:
-                            x-kubernetes-preserve-unknown-fields: true
+                            additionalProperties:
+                              type: string
                             type: object
                             description: Annotations added to the Kubernetes resource.
                         description: Metadata applied to the resource.
@@ -459,6 +517,13 @@ spec:
                       securityContext:
                         type: object
                         properties:
+                          appArmorProfile:
+                            type: object
+                            properties:
+                              localhostProfile:
+                                type: string
+                              type:
+                                type: string
                           fsGroup:
                             type: integer
                           fsGroupChangePolicy:
@@ -620,8 +685,17 @@ spec:
                                                     items:
                                                       type: string
                                             matchLabels:
-                                              x-kubernetes-preserve-unknown-fields: true
+                                              additionalProperties:
+                                                type: string
                                               type: object
+                                        matchLabelKeys:
+                                          type: array
+                                          items:
+                                            type: string
+                                        mismatchLabelKeys:
+                                          type: array
+                                          items:
+                                            type: string
                                         namespaceSelector:
                                           type: object
                                           properties:
@@ -639,7 +713,8 @@ spec:
                                                     items:
                                                       type: string
                                             matchLabels:
-                                              x-kubernetes-preserve-unknown-fields: true
+                                              additionalProperties:
+                                                type: string
                                               type: object
                                         namespaces:
                                           type: array
@@ -671,8 +746,17 @@ spec:
                                                 items:
                                                   type: string
                                         matchLabels:
-                                          x-kubernetes-preserve-unknown-fields: true
+                                          additionalProperties:
+                                            type: string
                                           type: object
+                                    matchLabelKeys:
+                                      type: array
+                                      items:
+                                        type: string
+                                    mismatchLabelKeys:
+                                      type: array
+                                      items:
+                                        type: string
                                     namespaceSelector:
                                       type: object
                                       properties:
@@ -690,7 +774,8 @@ spec:
                                                 items:
                                                   type: string
                                         matchLabels:
-                                          x-kubernetes-preserve-unknown-fields: true
+                                          additionalProperties:
+                                            type: string
                                           type: object
                                     namespaces:
                                       type: array
@@ -726,8 +811,17 @@ spec:
                                                     items:
                                                       type: string
                                             matchLabels:
-                                              x-kubernetes-preserve-unknown-fields: true
+                                              additionalProperties:
+                                                type: string
                                               type: object
+                                        matchLabelKeys:
+                                          type: array
+                                          items:
+                                            type: string
+                                        mismatchLabelKeys:
+                                          type: array
+                                          items:
+                                            type: string
                                         namespaceSelector:
                                           type: object
                                           properties:
@@ -745,7 +839,8 @@ spec:
                                                     items:
                                                       type: string
                                             matchLabels:
-                                              x-kubernetes-preserve-unknown-fields: true
+                                              additionalProperties:
+                                                type: string
                                               type: object
                                         namespaces:
                                           type: array
@@ -777,8 +872,17 @@ spec:
                                                 items:
                                                   type: string
                                         matchLabels:
-                                          x-kubernetes-preserve-unknown-fields: true
+                                          additionalProperties:
+                                            type: string
                                           type: object
+                                    matchLabelKeys:
+                                      type: array
+                                      items:
+                                        type: string
+                                    mismatchLabelKeys:
+                                      type: array
+                                      items:
+                                        type: string
                                     namespaceSelector:
                                       type: object
                                       properties:
@@ -796,7 +900,8 @@ spec:
                                                 items:
                                                   type: string
                                         matchLabels:
-                                          x-kubernetes-preserve-unknown-fields: true
+                                          additionalProperties:
+                                            type: string
                                           type: object
                                     namespaces:
                                       type: array
@@ -821,31 +926,6 @@ spec:
                             value:
                               type: string
                         description: The pod's tolerations.
-                      priorityClassName:
-                        type: string
-                        description: "The name of the priority class used to assign priority to the pods. For more information about priority classes, see {K8sPriorityClass}."
-                      schedulerName:
-                        type: string
-                        description: "The name of the scheduler used to dispatch this `Pod`. If not specified, the default scheduler will be used."
-                      hostAliases:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            hostnames:
-                              type: array
-                              items:
-                                type: string
-                            ip:
-                              type: string
-                        description: The pod's HostAliases. HostAliases is an optional list of hosts and IPs that will be injected into the Pod's hosts file if specified.
-                      tmpDirSizeLimit:
-                        type: string
-                        pattern: "^([0-9.]+)([eEinumkKMGTP]*[-+]?[0-9]*)$"
-                        description: Defines the total amount (for example `1Gi`) of local storage required for temporary EmptyDir volume (`/tmp`). Default value is `5Mi`.
-                      enableServiceLinks:
-                        type: boolean
-                        description: Indicates whether information about services should be injected into Pod's environment variables.
                       topologySpreadConstraints:
                         type: array
                         items:
@@ -868,7 +948,8 @@ spec:
                                         items:
                                           type: string
                                 matchLabels:
-                                  x-kubernetes-preserve-unknown-fields: true
+                                  additionalProperties:
+                                    type: string
                                   type: object
                             matchLabelKeys:
                               type: array
@@ -887,6 +968,31 @@ spec:
                             whenUnsatisfiable:
                               type: string
                         description: The pod's topology spread constraints.
+                      priorityClassName:
+                        type: string
+                        description: 'The name of the priority class used to assign priority to the pods. '
+                      schedulerName:
+                        type: string
+                        description: "The name of the scheduler used to dispatch this `Pod`. If not specified, the default scheduler will be used."
+                      hostAliases:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            hostnames:
+                              type: array
+                              items:
+                                type: string
+                            ip:
+                              type: string
+                        description: The pod's HostAliases. HostAliases is an optional list of hosts and IPs that will be injected into the Pod's hosts file if specified.
+                      enableServiceLinks:
+                        type: boolean
+                        description: Indicates whether information about services should be injected into Pod's environment variables.
+                      tmpDirSizeLimit:
+                        type: string
+                        pattern: "^([0-9.]+)([eEinumkKMGTP]*[-+]?[0-9]*)$"
+                        description: Defines the total amount (for example `1Gi`) of local storage required for temporary EmptyDir volume (`/tmp`). Default value is `5Mi`.
                     description: Template for Kafka Bridge `Pods`.
                   apiService:
                     type: object
@@ -895,11 +1001,13 @@ spec:
                         type: object
                         properties:
                           labels:
-                            x-kubernetes-preserve-unknown-fields: true
+                            additionalProperties:
+                              type: string
                             type: object
                             description: Labels added to the Kubernetes resource.
                           annotations:
-                            x-kubernetes-preserve-unknown-fields: true
+                            additionalProperties:
+                              type: string
                             type: object
                             description: Annotations added to the Kubernetes resource.
                         description: Metadata applied to the resource.
@@ -926,11 +1034,13 @@ spec:
                         type: object
                         properties:
                           labels:
-                            x-kubernetes-preserve-unknown-fields: true
+                            additionalProperties:
+                              type: string
                             type: object
                             description: Labels added to the Kubernetes resource.
                           annotations:
-                            x-kubernetes-preserve-unknown-fields: true
+                            additionalProperties:
+                              type: string
                             type: object
                             description: Annotations added to the Kubernetes resource.
                         description: Metadata to apply to the `PodDisruptionBudgetTemplate` resource.
@@ -959,6 +1069,13 @@ spec:
                         properties:
                           allowPrivilegeEscalation:
                             type: boolean
+                          appArmorProfile:
+                            type: object
+                            properties:
+                              localhostProfile:
+                                type: string
+                              type:
+                                type: string
                           capabilities:
                             type: object
                             properties:
@@ -1020,11 +1137,13 @@ spec:
                         type: object
                         properties:
                           labels:
-                            x-kubernetes-preserve-unknown-fields: true
+                            additionalProperties:
+                              type: string
                             type: object
                             description: Labels added to the Kubernetes resource.
                           annotations:
-                            x-kubernetes-preserve-unknown-fields: true
+                            additionalProperties:
+                              type: string
                             type: object
                             description: Annotations added to the Kubernetes resource.
                         description: Metadata applied to the resource.
@@ -1036,11 +1155,13 @@ spec:
                         type: object
                         properties:
                           labels:
-                            x-kubernetes-preserve-unknown-fields: true
+                            additionalProperties:
+                              type: string
                             type: object
                             description: Labels added to the Kubernetes resource.
                           annotations:
-                            x-kubernetes-preserve-unknown-fields: true
+                            additionalProperties:
+                              type: string
                             type: object
                             description: Annotations added to the Kubernetes resource.
                         description: Metadata applied to the resource.
@@ -1065,6 +1186,13 @@ spec:
                         properties:
                           allowPrivilegeEscalation:
                             type: boolean
+                          appArmorProfile:
+                            type: object
+                            properties:
+                              localhostProfile:
+                                type: string
+                              type:
+                                type: string
                           capabilities:
                             type: object
                             properties:
@@ -1165,10 +1293,10 @@ spec:
               url:
                 type: string
                 description: The URL at which external client applications can access the Kafka Bridge.
-              labelSelector:
-                type: string
-                description: Label selector for pods providing this resource.
               replicas:
                 type: integer
                 description: The current number of pods being used to provide this resource.
+              labelSelector:
+                type: string
+                description: Label selector for pods providing this resource.
             description: The status of the Kafka Bridge.

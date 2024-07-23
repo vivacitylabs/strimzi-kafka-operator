@@ -9,28 +9,29 @@ import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.rbac.ClusterRoleBinding;
 import io.fabric8.kubernetes.client.KubernetesClientException;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.StrimziPodSet;
-import io.strimzi.operator.common.model.Ca;
-import io.strimzi.operator.common.model.ClientsCa;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.podset.StrimziPodSet;
 import io.strimzi.operator.cluster.model.KafkaCluster;
-import io.strimzi.operator.cluster.model.ModelUtils;
 import io.strimzi.operator.cluster.model.NodeRef;
+import io.strimzi.operator.cluster.model.PodRevision;
 import io.strimzi.operator.cluster.model.PodSetUtils;
 import io.strimzi.operator.cluster.model.RestartReason;
 import io.strimzi.operator.cluster.model.RestartReasons;
 import io.strimzi.operator.cluster.model.jmx.SupportsJmx;
-import io.strimzi.operator.cluster.model.PodRevision;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.PodOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.SecretOperator;
 import io.strimzi.operator.common.Annotations;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.ReconciliationLogger;
 import io.strimzi.operator.common.Util;
+import io.strimzi.operator.common.auth.PemAuthIdentity;
+import io.strimzi.operator.common.auth.PemTrustSet;
+import io.strimzi.operator.common.auth.TlsPemIdentity;
+import io.strimzi.operator.common.model.Ca;
+import io.strimzi.operator.common.model.ClientsCa;
 import io.strimzi.operator.common.model.Labels;
-import io.strimzi.operator.common.operator.resource.PodOperator;
 import io.strimzi.operator.common.operator.resource.ReconcileResult;
-import io.strimzi.operator.common.operator.resource.SecretOperator;
-import io.vertx.core.CompositeFuture;
 import io.vertx.core.Future;
 
 import java.util.ArrayList;
@@ -96,20 +97,47 @@ public class ReconcilerUtils {
     }
 
     /**
-     * Utility method which helps to get the secrets with certificates needed to bootstrap different clients used during
+     * Utility method which helps to get the set of trusted certificates and client auth identities for the Cluster Operator
+     * needed to bootstrap different clients used during the reconciliation.
+     *
+     * @param reconciliation Reconciliation Marker
+     * @param secretOperator Secret operator for working with Kubernetes Secrets that store certificates
+     *
+     * @return  Future containing the TlsPemIdentity to use for client authentication.
+     */
+    public static Future<TlsPemIdentity> coTlsPemIdentity(Reconciliation reconciliation, SecretOperator secretOperator) {
+        return Future.join(
+                clusterCaPemTrustSet(reconciliation, secretOperator),
+                coPemAuthIdentity(reconciliation, secretOperator)
+        ).compose(res -> Future.succeededFuture(new TlsPemIdentity(res.resultAt(0), res.resultAt(1))));
+    }
+
+    /**
+     * Utility method which helps to get the set of trusted certificates for the cluster CA needed to bootstrap different clients used during
      * the reconciliation.
      *
      * @param reconciliation Reconciliation Marker
-     * @param secretOperator Secret operator for working with Secrets
+     * @param secretOperator Secret operator for working with Kubernetes Secrets that store certificates
      *
-     * @return  Composite Future with the first result being the Kubernetes Secret with the Cluster CA and the second
-     *          result being the Kubernetes Secret with the Cluster Operator public and private key.
+     * @return  Future containing the trust set to use for client authentication.
      */
-    public static CompositeFuture clientSecrets(Reconciliation reconciliation, SecretOperator secretOperator) {
-        return Future.join(
-                getSecret(secretOperator, reconciliation.namespace(), KafkaResources.clusterCaCertificateSecretName(reconciliation.name())),
-                getSecret(secretOperator, reconciliation.namespace(), KafkaResources.secretName(reconciliation.name()))
-        );
+    private static Future<PemTrustSet> clusterCaPemTrustSet(Reconciliation reconciliation, SecretOperator secretOperator) {
+        return getSecret(secretOperator, reconciliation.namespace(), KafkaResources.clusterCaCertificateSecretName(reconciliation.name()))
+                .map(PemTrustSet::new);
+    }
+
+    /**
+     * Utility method which helps to get the Cluster Operator identity to use for client authentication
+     * when bootstrapping different clients used during the reconciliation.
+     *
+     * @param reconciliation Reconciliation Marker
+     * @param secretOperator Secret operator for working with Kubernetes Secrets that store certificates
+     *
+     * @return  Future containing the auth identity to use for client authentication.
+     */
+    private static Future<PemAuthIdentity> coPemAuthIdentity(Reconciliation reconciliation, SecretOperator secretOperator) {
+        return getSecret(secretOperator, reconciliation.namespace(), KafkaResources.secretName(reconciliation.name()))
+                .map(PemAuthIdentity::clusterOperator);
     }
 
     /**
@@ -193,7 +221,7 @@ public class ReconcilerUtils {
      * @return      True when the generations match, false otherwise
      */
     private static boolean isPodCaCertUpToDate(Pod pod, Ca ca) {
-        return ModelUtils.caCertGeneration(ca) == Annotations.intAnnotation(pod, getCaCertAnnotation(ca), Ca.INIT_GENERATION);
+        return ca.caCertGeneration() == Annotations.intAnnotation(pod, getCaCertAnnotation(ca), Ca.INIT_GENERATION);
     }
 
     /**
@@ -363,13 +391,36 @@ public class ReconcilerUtils {
     }
 
     /**
-     * Checks whether Node pools are enabled for given Kafka custom resource using the strimzi.io/node-pools anotation
+     * Checks whether Node pools are enabled for given Kafka custom resource using the strimzi.io/node-pools annotation
      *
-     * @param kafka     Tha Kafka custom resource which might have the node-pools anotation
+     * @param kafka     The Kafka custom resource which might have the node-pools annotation
      *
      * @return      True when the node pools are enabled. False otherwise.
      */
     public static boolean nodePoolsEnabled(Kafka kafka) {
         return KafkaCluster.ENABLED_VALUE_STRIMZI_IO_NODE_POOLS.equals(Annotations.stringAnnotation(kafka, Annotations.ANNO_STRIMZI_IO_NODE_POOLS, "disabled").toLowerCase(Locale.ENGLISH));
+    }
+
+    /**
+     * Creates a hash from Secret's content.
+     * 
+     * @param secret Secret with content.
+     * @return Hash of the secret content.
+     */
+    public static String hashSecretContent(Secret secret) {
+        if (secret == null) {
+            throw new RuntimeException("Secret not found");
+        }
+        
+        if (secret.getData() == null || secret.getData().isEmpty()) {
+            throw new RuntimeException("Empty secret");
+        }
+        
+        StringBuilder sb = new StringBuilder();
+        secret.getData().entrySet().stream()
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(entry -> sb.append(entry.getKey()).append(entry.getValue()));
+        
+        return Util.hashStub(sb.toString());
     }
 }

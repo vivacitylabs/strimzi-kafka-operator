@@ -9,8 +9,11 @@ environment:
   TEST_GROUPS: ""
   EXCLUDED_TEST_GROUPS: "loadbalancer"
   CLUSTER_OPERATOR_INSTALL_TYPE: bundle
+  PARALLELISM_ENABLED: true
   PARALLEL_TEST_COUNT: 2
   RERUN_FAILED_TEST_COUNT: 2
+  # All tests on TF will use KRaft mode because ZK is not working reliably on it's infra
+  STRIMZI_USE_KRAFT_IN_TESTS: "true"
 adjust:
   - environment+:
       EXCLUDED_TEST_GROUPS: "loadbalancer,arm64unsupported"
@@ -18,7 +21,6 @@ adjust:
 
 /smoke:
   summary: Run smoke strimzi test suite
-  tags: [smoke]
   duration: 40m
   tier: 1
   environment+:
@@ -26,49 +28,34 @@ adjust:
 
 /upgrade:
   summary: Run upgrade strimzi test suite
-  tags: [strimzi, kafka, upgrade]
   duration: 5h
   tier: 2
   environment+:
-    TEST_PROFILE: upgrade
+    TEST_PROFILE: kraft_upgrade
 
 /regression-operators:
   summary: Run regression strimzi test suite
-  tags: [strimzi, kafka, regression, operators]
   duration: 10h
   tier: 2
   environment+:
     TEST_PROFILE: operators
 
-/regression-components:
+/regression-brokers-and-security:
   summary: Run regression strimzi test suite
-  tags: [strimzi, kafka, regression, components]
   duration: 12h
   tier: 2
   environment+:
-    TEST_PROFILE: components
+    TEST_PROFILE: brokers-and-security
 
-/kraft-operators:
-  summary: Run regression kraft strimzi test suite
-  tags: [strimzi, kafka, kraft, operators]
-  duration: 8h
+/regression-operands:
+  summary: Run regression strimzi test suite
+  duration: 12h
   tier: 2
   environment+:
-    TEST_PROFILE: operators
-    STRIMZI_FEATURE_GATES: "+UseKRaft,+StableConnectIdentities"
-
-/kraft-components:
-  summary: Run regression kraft strimzi test suite
-  tags: [strimzi, kafka, kraft, components]
-  duration: 8h
-  tier: 2
-  environment+:
-    TEST_PROFILE: components
-    STRIMZI_FEATURE_GATES: "+UseKRaft,+StableConnectIdentities"
+    TEST_PROFILE: operands
 
 /acceptance:
   summary: Run acceptance strimzi test suite
-  tags: [strimzi, kafka, acceptance]
   duration: 5h
   tier: 2
   environment+:
@@ -76,8 +63,32 @@ adjust:
 
 /sanity:
   summary: Run sanity strimzi test suite
-  tags: [strimzi, kafka, sanity]
   duration: 5h
   tier: 2
   environment+:
     TEST_PROFILE: sanity
+
+/performance:
+  summary: Run performance strimzi test suite
+  duration: 24h
+  tier: 1
+  environment+:
+    TEST_PROFILE: performance
+    PARALLELISM_ENABLED: false
+
+/performance-capacity:
+  summary: Run performance capacity strimzi test suite
+  duration: 24h
+  tier: 1
+  environment+:
+    TEST_PROFILE: performance-capacity
+    PARALLELISM_ENABLED: false
+
+/performance-topic-operator-capacity:
+  summary: Run topic operator performance capacity strimzi test suite
+  duration: 24h
+  tier: 1
+  environment+:
+    TEST_PROFILE: performance-capacity
+    PARALLELISM_ENABLED: false
+    TESTS: TopicOperatorPerformance#testCapacity

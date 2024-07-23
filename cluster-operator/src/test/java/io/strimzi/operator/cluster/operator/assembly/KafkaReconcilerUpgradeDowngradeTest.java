@@ -5,20 +5,19 @@
 package io.strimzi.operator.cluster.operator.assembly;
 
 import io.fabric8.kubernetes.api.model.Pod;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBuilder;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.StrimziPodSet;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
-import io.strimzi.api.kafka.model.status.KafkaStatus;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.KafkaStatus;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
+import io.strimzi.api.kafka.model.podset.StrimziPodSet;
 import io.strimzi.certs.OpenSslCertManager;
-import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
 import io.strimzi.operator.cluster.ClusterOperatorConfig;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
+import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
 import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.cluster.model.AbstractModel;
-import io.strimzi.operator.common.model.ClientsCa;
 import io.strimzi.operator.cluster.model.ClusterCa;
 import io.strimzi.operator.cluster.model.KafkaCluster;
 import io.strimzi.operator.cluster.model.KafkaConfiguration;
@@ -26,12 +25,13 @@ import io.strimzi.operator.cluster.model.KafkaVersion;
 import io.strimzi.operator.cluster.model.KafkaVersionChange;
 import io.strimzi.operator.cluster.model.PodSetUtils;
 import io.strimzi.operator.cluster.operator.resource.ResourceOperatorSupplier;
-import io.strimzi.operator.common.model.PasswordGenerator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.StrimziPodSetOperator;
 import io.strimzi.operator.common.Reconciliation;
+import io.strimzi.operator.common.model.ClientsCa;
 import io.strimzi.operator.common.model.Labels;
+import io.strimzi.operator.common.model.PasswordGenerator;
 import io.strimzi.operator.common.operator.MockCertManager;
 import io.strimzi.operator.common.operator.resource.ReconcileResult;
-import io.strimzi.operator.common.operator.resource.StrimziPodSetOperator;
 import io.strimzi.platform.KubernetesVersion;
 import io.vertx.core.Future;
 import io.vertx.core.Vertx;
@@ -59,7 +59,7 @@ public class KafkaReconcilerUpgradeDowngradeTest {
     private final static String NAMESPACE = "testns";
     private final static String CLUSTER_NAME = "testkafka";
     private final static KafkaVersion.Lookup VERSIONS = KafkaVersionTestUtils.getKafkaVersionLookup();
-    private final static PlatformFeaturesAvailability PFA = new PlatformFeaturesAvailability(true, KubernetesVersion.V1_22);
+    private final static PlatformFeaturesAvailability PFA = new PlatformFeaturesAvailability(true, KubernetesVersion.MINIMAL_SUPPORTED_VERSION);
     private final static ClusterOperatorConfig CO_CONFIG = ResourceUtils.dummyClusterOperatorConfig();
     private final static ClusterCa CLUSTER_CA = new ClusterCa(
             Reconciliation.DUMMY_RECONCILIATION,
@@ -132,7 +132,7 @@ public class KafkaReconcilerUpgradeDowngradeTest {
                 .endSpec()
                 .build();
 
-        KafkaVersionChange versionChange = new KafkaVersionChange(VERSIONS.defaultVersion(), VERSIONS.defaultVersion(), null, null);
+        KafkaVersionChange versionChange = new KafkaVersionChange(VERSIONS.defaultVersion(), VERSIONS.defaultVersion(), null, null, null);
 
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
 
@@ -174,7 +174,7 @@ public class KafkaReconcilerUpgradeDowngradeTest {
 
     @Test
     public void testWithoutAnyVersionsInCR(VertxTestContext context) {
-        KafkaVersionChange versionChange = new KafkaVersionChange(VERSIONS.defaultVersion(), VERSIONS.defaultVersion(), VERSIONS.defaultVersion().protocolVersion(), VERSIONS.defaultVersion().messageVersion());
+        KafkaVersionChange versionChange = new KafkaVersionChange(VERSIONS.defaultVersion(), VERSIONS.defaultVersion(), VERSIONS.defaultVersion().protocolVersion(), VERSIONS.defaultVersion().messageVersion(), null);
 
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
 
@@ -226,7 +226,7 @@ public class KafkaReconcilerUpgradeDowngradeTest {
                 .endSpec()
                 .build();
 
-        KafkaVersionChange versionChange = new KafkaVersionChange(VERSIONS.version(KafkaVersionTestUtils.PREVIOUS_KAFKA_VERSION), VERSIONS.defaultVersion(), KafkaVersionTestUtils.PREVIOUS_PROTOCOL_VERSION, KafkaVersionTestUtils.PREVIOUS_FORMAT_VERSION);
+        KafkaVersionChange versionChange = new KafkaVersionChange(VERSIONS.version(KafkaVersionTestUtils.PREVIOUS_KAFKA_VERSION), VERSIONS.defaultVersion(), KafkaVersionTestUtils.PREVIOUS_PROTOCOL_VERSION, KafkaVersionTestUtils.PREVIOUS_FORMAT_VERSION, null);
 
         ResourceOperatorSupplier supplier = ResourceUtils.supplierWithMocks(false);
 
@@ -268,8 +268,21 @@ public class KafkaReconcilerUpgradeDowngradeTest {
 
     static class MockKafkaReconciler extends KafkaReconciler {
         public MockKafkaReconciler(Reconciliation reconciliation, ResourceOperatorSupplier supplier, Kafka kafkaCr, KafkaVersionChange versionChange) {
-            super(reconciliation, kafkaCr, null, Map.of(), Map.of(), CLUSTER_CA, CLIENTS_CA, versionChange, CO_CONFIG, supplier, PFA, vertx);
+            super(reconciliation, kafkaCr, null, createKafkaCluster(reconciliation, supplier, kafkaCr, versionChange), CLUSTER_CA, CLIENTS_CA, CO_CONFIG, supplier, PFA, vertx, new KafkaMetadataStateManager(reconciliation, kafkaCr));
             listenerReconciliationResults = new KafkaListenersReconciler.ReconciliationResult();
+        }
+
+        private static KafkaCluster createKafkaCluster(Reconciliation reconciliation, ResourceOperatorSupplier supplier, Kafka kafkaCr, KafkaVersionChange versionChange)   {
+            return  KafkaClusterCreator.createKafkaCluster(
+                    reconciliation,
+                    kafkaCr,
+                    null,
+                    Map.of(),
+                    Map.of(),
+                    versionChange,
+                    new KafkaMetadataStateManager(reconciliation, kafkaCr).getMetadataConfigurationState(),
+                    VERSIONS,
+                    supplier.sharedEnvironmentProvider);
         }
 
         @Override

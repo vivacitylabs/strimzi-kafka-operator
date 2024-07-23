@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.security.auth.login.AppConfigurationEntry;
 import javax.security.auth.login.Configuration;
+
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
@@ -122,7 +123,7 @@ public class AuthenticationUtilsTest {
     }
 
     //used for testing what keys and values does kafka accept.
-    public static void main(String[] a) throws Exception {
+    public static void main(String[] a) {
         String jaasConfig = "modulename required oauth.groups.claim.delimiter=\"value;1\";";
         AppConfigurationEntry configEntry = parseJaasConfig(jaasConfig);
         configEntry.getLoginModuleName();

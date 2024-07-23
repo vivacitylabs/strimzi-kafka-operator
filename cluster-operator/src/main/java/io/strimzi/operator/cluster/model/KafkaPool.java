@@ -5,20 +5,20 @@
 package io.strimzi.operator.cluster.model;
 
 import io.fabric8.kubernetes.api.model.OwnerReference;
-import io.strimzi.api.kafka.model.JvmOptions;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaResources;
+import io.strimzi.api.kafka.model.common.Condition;
+import io.strimzi.api.kafka.model.common.JvmOptions;
+import io.strimzi.api.kafka.model.common.template.ContainerTemplate;
+import io.strimzi.api.kafka.model.common.template.PodTemplate;
+import io.strimzi.api.kafka.model.common.template.ResourceTemplate;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaClusterTemplate;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.Storage;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePool;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePoolStatus;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePoolStatusBuilder;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePoolTemplate;
 import io.strimzi.api.kafka.model.nodepool.ProcessRoles;
-import io.strimzi.api.kafka.model.status.Condition;
-import io.strimzi.api.kafka.model.storage.Storage;
-import io.strimzi.api.kafka.model.template.ContainerTemplate;
-import io.strimzi.api.kafka.model.template.KafkaClusterTemplate;
-import io.strimzi.api.kafka.model.template.PodTemplate;
-import io.strimzi.api.kafka.model.template.ResourceTemplate;
 import io.strimzi.operator.cluster.model.nodepools.NodeIdAssignment;
 import io.strimzi.operator.common.Reconciliation;
 import io.strimzi.operator.common.model.Labels;
@@ -103,7 +103,7 @@ public class KafkaPool extends AbstractModel {
                         .withStrimziKind(kafka.getKind())
                         // This needs ot be selectable through KafkaCluster selector. So we intentionally use the <clusterName>-kafka
                         // as the strimzi.io/name. strimzi.io/pool-name can be used to select through node pool.
-                        .withStrimziName(KafkaResources.kafkaStatefulSetName(kafka.getMetadata().getName()))
+                        .withStrimziName(KafkaResources.kafkaComponentName(kafka.getMetadata().getName()))
                         .withStrimziCluster(kafka.getMetadata().getName())
                         .withStrimziComponentType(COMPONENT_TYPE)
                         .withStrimziPoolName(pool.getMetadata().getName())
@@ -159,11 +159,13 @@ public class KafkaPool extends AbstractModel {
 
             StorageDiff diff = new StorageDiff(reconciliation, oldStorage, newStorage, idAssignment.current(), idAssignment.desired());
 
-            if (!diff.isEmpty()) {
+            if (diff.issuesDetected()) {
                 LOGGER.warnCr(reconciliation, "Only the following changes to Kafka storage are allowed: " +
                         "changing the deleteClaim flag, " +
+                        "changing the kraftMetadata flag (but only one one volume can be marked to store the KRaft metadata log at a time), " +
                         "adding volumes to Jbod storage or removing volumes from Jbod storage, " +
-                        "changing overrides to nodes which do not exist yet " +
+                        "each volume in Jbod storage should have an unique ID, " +
+                        "changing overrides to nodes which do not exist yet, " +
                         "and increasing size of persistent claim volumes (depending on the volume type and used storage class).");
                 LOGGER.warnCr(reconciliation, "The desired Kafka storage configuration in the KafkaNodePool resource {}/{} contains changes which are not allowed. As a " +
                         "result, all storage changes will be ignored. Use DEBUG level logging for more information " +
@@ -171,12 +173,17 @@ public class KafkaPool extends AbstractModel {
 
                 Condition warning = StatusUtils.buildWarningCondition("KafkaStorage",
                         "The desired Kafka storage configuration in the KafkaNodePool resource " + pool.getMetadata().getNamespace() + "/" + pool.getMetadata().getName() + " contains changes which are not allowed. As a " +
-                        "result, all storage changes will be ignored. Use DEBUG level logging for more information " +
-                        "about the detected changes.");
+                                "result, all storage changes will be ignored. Use DEBUG level logging for more information " +
+                                "about the detected changes.");
                 result.warningConditions.add(warning);
 
                 result.setStorage(oldStorage);
             } else {
+                if (!VolumeUtils.kraftMetadataPath(oldStorage).equals(VolumeUtils.kraftMetadataPath(newStorage)))    {
+                    // The volume for the KRaft metadata log is changing. We should log it.
+                    LOGGER.warnCr(reconciliation, "The KRaft metadata log for KafkaNodePool {}/{} will be moved from volume {} to volume {}.", pool.getMetadata().getNamespace(), pool.getMetadata().getName(), VolumeUtils.kraftMetadataPath(oldStorage), VolumeUtils.kraftMetadataPath(newStorage));
+                }
+
                 result.setStorage(newStorage);
             }
         } else {
@@ -302,9 +309,28 @@ public class KafkaPool extends AbstractModel {
         return new KafkaNodePoolStatusBuilder()
                 .withClusterId(clusterId)
                 .withNodeIds(new ArrayList<>(idAssignment.desired()))
+                .withRoles(processRoles.stream().sorted().toList())
                 .withReplicas(idAssignment.desired().size())
                 .withLabelSelector(getSelectorLabels().toSelectorString())
                 .withConditions(warningConditions)
                 .build();
+    }
+
+    /**
+     * Generates set of Kafka node IDs going to be removed from the Kafka cluster.
+     *
+     * @return  Set of Kafka node IDs which are going to be removed
+     */
+    public Set<Integer> scaledDownNodes() {
+        return idAssignment.toBeRemoved();
+    }
+
+    /**
+     * Generates set of Kafka node IDs that used to have the broker role but do not have it anymore.
+     *
+     * @return  Set of Kafka node IDs which are removing the broker role
+     */
+    public Set<Integer> usedToBeBrokerNodes() {
+        return idAssignment.usedToBeBroker();
     }
 }

@@ -7,10 +7,11 @@ package io.strimzi.api.kafka.model.connect.build;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
-import io.strimzi.api.kafka.model.Constants;
+import io.strimzi.api.kafka.model.common.Constants;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.sundr.builder.annotations.Buildable;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 /**
  * Maven artifact represents an artifact which is downloaded from Maven repository
@@ -20,10 +21,10 @@ import lombok.EqualsAndHashCode;
         builderPackage = Constants.FABRIC8_KUBERNETES_API
 )
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonPropertyOrder({ "repository", "group", "artifact", "version" })
+@JsonPropertyOrder({ "type", "repository", "group", "artifact", "version", "insecure" })
 @EqualsAndHashCode(callSuper = true)
+@ToString(callSuper = true)
 public class MavenArtifact extends Artifact {
-    private static final long serialVersionUID = 1L;
     public static final String DEFAULT_REPOSITORY = "https://repo1.maven.org/maven2/";
 
     private String group;

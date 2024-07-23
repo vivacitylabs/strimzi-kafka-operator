@@ -5,42 +5,41 @@
 package io.strimzi.operator.cluster.operator.assembly;
 
 import io.fabric8.kubernetes.api.model.LocalObjectReference;
+import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.rbac.RoleBinding;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
 import io.strimzi.operator.cluster.ClusterOperatorConfig;
-import io.strimzi.operator.common.model.Ca;
+import io.strimzi.operator.cluster.model.CertUtils;
 import io.strimzi.operator.cluster.model.ClusterCa;
 import io.strimzi.operator.cluster.model.EntityOperator;
 import io.strimzi.operator.cluster.model.ImagePullPolicy;
-import io.strimzi.operator.cluster.model.KafkaVersion;
-import io.strimzi.operator.cluster.model.ModelUtils;
 import io.strimzi.operator.cluster.operator.resource.ResourceOperatorSupplier;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.ConfigMapOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.DeploymentOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.NetworkPolicyOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.RoleBindingOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.RoleOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.SecretOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.ServiceAccountOperator;
 import io.strimzi.operator.common.Annotations;
 import io.strimzi.operator.common.Reconciliation;
-import io.strimzi.operator.common.ReconciliationLogger;
 import io.strimzi.operator.common.Util;
-import io.strimzi.operator.common.operator.resource.ConfigMapOperator;
-import io.strimzi.operator.common.operator.resource.DeploymentOperator;
+import io.strimzi.operator.common.model.Ca;
 import io.strimzi.operator.common.operator.resource.ReconcileResult;
-import io.strimzi.operator.common.operator.resource.RoleBindingOperator;
-import io.strimzi.operator.common.operator.resource.RoleOperator;
-import io.strimzi.operator.common.operator.resource.SecretOperator;
-import io.strimzi.operator.common.operator.resource.ServiceAccountOperator;
-import io.strimzi.operator.common.operator.resource.NetworkPolicyOperator;
 import io.vertx.core.Future;
 
 import java.time.Clock;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Class used for reconciliation of Entity Operator. This class contains both the steps of the Entity Operator
  * reconciliation pipeline and is also used to store the state between them.
  */
 public class EntityOperatorReconciler {
-    private static final ReconciliationLogger LOGGER = ReconciliationLogger.create(EntityOperatorReconciler.class.getName());
-
     private final Reconciliation reconciliation;
     private final long operationTimeoutMs;
     private final EntityOperator entityOperator;
@@ -55,9 +54,11 @@ public class EntityOperatorReconciler {
     private final RoleBindingOperator roleBindingOperator;
     private final ConfigMapOperator configMapOperator;
     private final NetworkPolicyOperator networkPolicyOperator;
-    private final boolean unidirectionalTopicOperator;
-    private boolean existingEntityTopicOperatorCertsChanged = false;
-    private boolean existingEntityUserOperatorCertsChanged = false;
+    private final boolean isCruiseControlEnabled;
+
+    private String toCertificateHash = "";
+    private String uoCertificateHash = "";
+    private String ccApiSecretHash = "";
 
     /**
      * Constructs the Entity Operator reconciler
@@ -66,7 +67,6 @@ public class EntityOperatorReconciler {
      * @param config                    Cluster Operator Configuration
      * @param supplier                  Supplier with Kubernetes Resource Operators
      * @param kafkaAssembly             The Kafka custom resource
-     * @param versions                  The supported Kafka versions
      * @param clusterCa                 The Cluster CA instance
      */
     public EntityOperatorReconciler(
@@ -74,18 +74,16 @@ public class EntityOperatorReconciler {
             ClusterOperatorConfig config,
             ResourceOperatorSupplier supplier,
             Kafka kafkaAssembly,
-            KafkaVersion.Lookup versions,
             ClusterCa clusterCa
     ) {
         this.reconciliation = reconciliation;
         this.operationTimeoutMs = config.getOperationTimeoutMs();
-        this.entityOperator = EntityOperator.fromCrd(reconciliation, kafkaAssembly, versions, supplier.sharedEnvironmentProvider,
-                config.featureGates().unidirectionalTopicOperatorEnabled());
+        this.entityOperator = EntityOperator.fromCrd(reconciliation, kafkaAssembly, supplier.sharedEnvironmentProvider, config);
         this.clusterCa = clusterCa;
         this.maintenanceWindows = kafkaAssembly.getSpec().getMaintenanceTimeWindows();
         this.isNetworkPolicyGeneration = config.isNetworkPolicyGeneration();
-        this.unidirectionalTopicOperator = config.featureGates().unidirectionalTopicOperatorEnabled();
-
+        this.isCruiseControlEnabled = kafkaAssembly.getSpec().getCruiseControl() != null;
+        
         this.deploymentOperator = supplier.deploymentOperations;
         this.secretOperator = supplier.secretOperations;
         this.serviceAccountOperator = supplier.serviceAccountOperations;
@@ -117,11 +115,37 @@ public class EntityOperatorReconciler {
                 .compose(i -> userOperatorRoleBindings())
                 .compose(i -> topicOperatorConfigMap())
                 .compose(i -> userOperatorConfigMap())
+                .compose(i -> topicOperatorCruiseControlApiSecret())
                 .compose(i -> deleteOldEntityOperatorSecret())
                 .compose(i -> topicOperatorSecret(clock))
                 .compose(i -> userOperatorSecret(clock))
                 .compose(i -> deployment(isOpenShift, imagePullPolicy, imagePullSecrets))
                 .compose(i -> waitForDeploymentReadiness());
+    }
+
+    /**
+     * If not present, we generate a new Topic Operator secret containing its admin credentials for the Cruise Control API secret.
+     * We also generate the secret's content hash, that is later used to detect changes that require a pod restart.
+     *
+     * @return Future which completes when the reconciliation is done.
+     */
+    protected Future<Void> topicOperatorCruiseControlApiSecret() {
+        if (isCruiseControlEnabled) {
+            String ccApiSecretName = KafkaResources.entityTopicOperatorCcApiSecretName(reconciliation.name());
+            if (entityOperator != null && entityOperator.topicOperator() != null) {
+                return secretOperator.getAsync(reconciliation.namespace(), ccApiSecretName)
+                    .compose(oldSecret -> {
+                        Secret newSecret = entityOperator.topicOperator().generateCruiseControlApiSecret(oldSecret);
+                        this.ccApiSecretHash = ReconcilerUtils.hashSecretContent(newSecret);
+                        return secretOperator.reconcile(reconciliation, reconciliation.namespace(), ccApiSecretName, newSecret)
+                            .map((Void) null);
+                    });
+            } else {
+                return secretOperator.reconcile(reconciliation, reconciliation.namespace(), ccApiSecretName, null)
+                    .map((Void) null);
+            }
+        }
+        return Future.succeededFuture();
     }
 
     /**
@@ -343,16 +367,12 @@ public class EntityOperatorReconciler {
         if (entityOperator != null && entityOperator.topicOperator() != null) {
             return secretOperator.getAsync(reconciliation.namespace(), KafkaResources.entityTopicOperatorSecretName(reconciliation.name()))
                     .compose(oldSecret -> {
+                        Secret newSecret = entityOperator.topicOperator().generateCertificatesSecret(clusterCa, oldSecret, Util.isMaintenanceTimeWindowsSatisfied(reconciliation, maintenanceWindows, clock.instant()));
+
                         return secretOperator
-                                .reconcile(reconciliation, reconciliation.namespace(), KafkaResources.entityTopicOperatorSecretName(reconciliation.name()),
-                                        entityOperator.topicOperator().generateSecret(clusterCa, Util.isMaintenanceTimeWindowsSatisfied(reconciliation, maintenanceWindows, clock.instant())))
-                                .compose(patchResult -> {
-                                    if (patchResult instanceof ReconcileResult.Patched) {
-                                        // The secret is patched and some changes to the existing certificates actually occurred
-                                        existingEntityTopicOperatorCertsChanged = ModelUtils.doExistingCertificatesDiffer(oldSecret, patchResult.resource());
-                                    } else {
-                                        existingEntityTopicOperatorCertsChanged = false;
-                                    }
+                                .reconcile(reconciliation, reconciliation.namespace(), KafkaResources.entityTopicOperatorSecretName(reconciliation.name()), newSecret)
+                                .compose(i -> {
+                                    toCertificateHash = CertUtils.getCertificateShortThumbprint(newSecret, Ca.SecretEntry.CRT.asKey(EntityOperator.COMPONENT_TYPE));
 
                                     return Future.succeededFuture();
                                 });
@@ -376,16 +396,12 @@ public class EntityOperatorReconciler {
         if (entityOperator != null && entityOperator.userOperator() != null) {
             return secretOperator.getAsync(reconciliation.namespace(), KafkaResources.entityUserOperatorSecretName(reconciliation.name()))
                     .compose(oldSecret -> {
+                        Secret newSecret = entityOperator.userOperator().generateCertificatesSecret(clusterCa, oldSecret, Util.isMaintenanceTimeWindowsSatisfied(reconciliation, maintenanceWindows, clock.instant()));
+
                         return secretOperator
-                                .reconcile(reconciliation, reconciliation.namespace(), KafkaResources.entityUserOperatorSecretName(reconciliation.name()),
-                                        entityOperator.userOperator().generateSecret(clusterCa, Util.isMaintenanceTimeWindowsSatisfied(reconciliation, maintenanceWindows, clock.instant())))
-                                .compose(patchResult -> {
-                                    if (patchResult instanceof ReconcileResult.Patched) {
-                                        // The secret is patched and some changes to the existing certificates actually occurred
-                                        existingEntityUserOperatorCertsChanged = ModelUtils.doExistingCertificatesDiffer(oldSecret, patchResult.resource());
-                                    } else {
-                                        existingEntityUserOperatorCertsChanged = false;
-                                    }
+                                .reconcile(reconciliation, reconciliation.namespace(), KafkaResources.entityUserOperatorSecretName(reconciliation.name()), newSecret)
+                                .compose(i -> {
+                                    uoCertificateHash = CertUtils.getCertificateShortThumbprint(newSecret, Ca.SecretEntry.CRT.asKey(EntityOperator.COMPONENT_TYPE));
 
                                     return Future.succeededFuture();
                                 });
@@ -422,40 +438,26 @@ public class EntityOperatorReconciler {
      */
     protected Future<Void> deployment(boolean isOpenShift, ImagePullPolicy imagePullPolicy, List<LocalObjectReference> imagePullSecrets) {
         if (entityOperator != null) {
-            Deployment deployment = entityOperator.generateDeployment(isOpenShift, imagePullPolicy, imagePullSecrets);
-            int caCertGeneration = ModelUtils.caCertGeneration(clusterCa);
-            Annotations.annotations(deployment.getSpec().getTemplate()).put(Ca.ANNO_STRIMZI_IO_CLUSTER_CA_CERT_GENERATION, String.valueOf(caCertGeneration));
-            int caKeyGeneration = ModelUtils.caKeyGeneration(clusterCa);
-            Annotations.annotations(deployment.getSpec().getTemplate()).put(Ca.ANNO_STRIMZI_IO_CLUSTER_CA_KEY_GENERATION, String.valueOf(caKeyGeneration));
+            Map<String, String> podAnnotations = new LinkedHashMap<>();
+            podAnnotations.put(Ca.ANNO_STRIMZI_IO_CLUSTER_CA_CERT_GENERATION, String.valueOf(clusterCa.caCertGeneration()));
+            podAnnotations.put(Ca.ANNO_STRIMZI_IO_CLUSTER_CA_KEY_GENERATION, String.valueOf(clusterCa.caKeyGeneration()));
+            podAnnotations.put(Annotations.ANNO_STRIMZI_SERVER_CERT_HASH, toCertificateHash + uoCertificateHash);
+
+            if (entityOperator.topicOperator() != null && isCruiseControlEnabled) {
+                podAnnotations.put(Annotations.ANNO_STRIMZI_AUTH_HASH, ccApiSecretHash);
+            }
+
+            Deployment deployment = entityOperator.generateDeployment(podAnnotations, isOpenShift, imagePullPolicy, imagePullSecrets);
+
 
             return deploymentOperator
                     .reconcile(reconciliation, reconciliation.namespace(), KafkaResources.entityOperatorDeploymentName(reconciliation.name()), deployment)
-                    .compose(patchResult -> {
-                        if (patchResult instanceof ReconcileResult.Noop)   {
-                            // Deployment needs ot be rolled because the certificate secret changed or older/expired cluster CA removed
-                            if (existingEntityTopicOperatorCertsChanged || existingEntityUserOperatorCertsChanged || clusterCa.certsRemoved()) {
-                                LOGGER.infoCr(reconciliation, "Rolling Entity Operator to update or remove certificates");
-                                return rollDeployment();
-                            }
-                        }
-
-                        // No need to roll, we patched the deployment (and it will roll itself) or we created a new one
-                        return Future.succeededFuture();
-                    });
+                    .map((Void) null);
         } else  {
             return deploymentOperator
                     .reconcile(reconciliation, reconciliation.namespace(), KafkaResources.entityOperatorDeploymentName(reconciliation.name()), null)
                     .map((Void) null);
         }
-    }
-
-    /**
-     * Triggers the rolling update of the Entity Operator. This is used to trigger the roll when the certificates change.
-     *
-     * @return  Future which completes when the reconciliation is done
-     */
-    protected Future<Void> rollDeployment() {
-        return deploymentOperator.rollingUpdate(reconciliation, reconciliation.namespace(), KafkaResources.entityOperatorDeploymentName(reconciliation.name()), operationTimeoutMs);
     }
 
     /**

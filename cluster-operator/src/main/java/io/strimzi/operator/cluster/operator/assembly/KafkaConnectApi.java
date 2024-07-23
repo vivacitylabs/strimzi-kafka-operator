@@ -11,6 +11,7 @@ import io.strimzi.operator.common.model.OrderedProperties;
 import io.vertx.core.Future;
 import io.vertx.core.http.HttpClientResponse;
 import io.vertx.core.json.JsonObject;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -25,7 +26,7 @@ public interface KafkaConnectApi {
      * @param host The host to make the request to.
      * @param port The port to make the request to.
      * @param connectorName The name of the connector to create or update.
-     * @param configJson The connectors configuration.
+     * @param configJson The connector configuration.
      * @return A Future which completes with the result of the request. If the request was successful,
      * this returns information about the connector, including its name, config and tasks.
      */

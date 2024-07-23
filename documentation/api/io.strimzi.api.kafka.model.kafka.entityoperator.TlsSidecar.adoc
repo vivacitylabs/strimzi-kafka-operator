@@ -1,0 +1,2 @@
+The TLS sidecar type is not used anymore.
+If set, it will be ignored

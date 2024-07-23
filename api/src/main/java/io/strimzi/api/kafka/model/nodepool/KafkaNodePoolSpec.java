@@ -8,15 +8,16 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import io.fabric8.kubernetes.api.model.ResourceRequirements;
-import io.strimzi.api.kafka.model.Constants;
-import io.strimzi.api.kafka.model.JvmOptions;
-import io.strimzi.api.kafka.model.Spec;
-import io.strimzi.api.kafka.model.storage.Storage;
+import io.strimzi.api.kafka.model.common.Constants;
+import io.strimzi.api.kafka.model.common.JvmOptions;
+import io.strimzi.api.kafka.model.common.Spec;
+import io.strimzi.api.kafka.model.kafka.Storage;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.strimzi.crdgenerator.annotations.KubeLink;
 import io.strimzi.crdgenerator.annotations.Minimum;
 import io.sundr.builder.annotations.Buildable;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 import java.util.List;
 
@@ -30,9 +31,8 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 @JsonPropertyOrder({"replicas", "storage", "roles", "resources", "jvmOptions", "template"})
 @EqualsAndHashCode(callSuper = true)
+@ToString(callSuper = true)
 public class KafkaNodePoolSpec extends Spec {
-    private static final long serialVersionUID = 1L;
-
     private int replicas;
     private Storage storage;
     private List<ProcessRoles> roles;

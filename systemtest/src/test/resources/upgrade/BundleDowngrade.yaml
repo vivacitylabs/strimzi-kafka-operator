@@ -8,7 +8,7 @@
 #  fromKafkaVersionsUrl: String - url, from which kafka-versions.yaml is downloaded
 #  additionalTopics: int - number of additional topics, which will be created
 #  oldestKafka: String - version of Kafka, used in initial deployment of Kafka CR
-#  imagesAfterOperations:  Strings - images that corresponding pods should contain. They are checked after upgrade
+#  imagesAfterOperations:  Strings - images that corresponding pods should contain. They are checked after downgrade
 #    zookeeper: 
 #    kafka: 
 #    topicOperator: 
@@ -23,22 +23,26 @@
 #    reason: String - reason why we skip / not skip the test case (information, not propagated to test itself)
 #  featureGatesBefore: String - FG added to `STRIMZI_FEATURE_GATES` environment variable, on initial deploy of CO
 #  featureGatesAfter: String - FG added to `STRIMZI_FEATURE_GATES` environment variable, on upgrade of CO
+#  filePaths: path to example files for particular resources
+#    kafkaBefore: path to Kafka resource (ZK mode) in the version of Strimzi, from which we are doing the downgrade
+#    kafkaAfter: path to Kafka resource (ZK mode) in the version of Strimzi, to which we are doing the downgrade
+#    kafkaKRaftBefore: path to Kafka and KafkaNodePool resources (KRaft mode), collected in one file, in the version of Strimzi, from which we are doing the downgrade
+#    kafkaKRaftAfter: path to Kafka and KafkaNodePool resources (KRaft mode), collected in one file, in the version of Strimzi, to which we are doing the downgrade
 # --- Structure ---
-  
 - fromVersion: HEAD
-  toVersion: 0.37.0
+  toVersion: 0.41.0
   fromExamples: HEAD
-  toExamples: strimzi-0.37.0
+  toExamples: strimzi-0.41.0
   fromUrl: HEAD
-  toUrl: https://github.com/strimzi/strimzi-kafka-operator/releases/download/0.37.0/strimzi-0.37.0.zip
+  toUrl: https://github.com/strimzi/strimzi-kafka-operator/releases/download/0.41.0/strimzi-0.41.0.zip
   fromKafkaVersionsUrl: HEAD
   additionalTopics: 2
   imagesAfterOperations:
-    zookeeper: strimzi/kafka:0.37.0-kafka-3.5.1
-    kafka: strimzi/kafka:0.37.0-kafka-3.5.1
-    topicOperator: strimzi/operator:0.37.0
-    userOperator: strimzi/operator:0.37.0
-  deployKafkaVersion: 3.5.1
+    zookeeper: strimzi/kafka:0.41.0-kafka-3.6.0
+    kafka: strimzi/kafka:0.41.0-kafka-3.6.0
+    topicOperator: strimzi/operator:0.41.0
+    userOperator: strimzi/operator:0.41.0
+  deployKafkaVersion: 3.7.0
   client:
     continuousClientsMessages: 500
   environmentInfo:
@@ -46,22 +50,27 @@
     status: stable
     flakyEnvVariable: none
     reason: Test is working on all environment used by QE.
-  featureGatesBefore: "+StableConnectIdentities"
-  featureGatesAfter: "-StableConnectIdentities"
+  featureGatesBefore: ""
+  featureGatesAfter: ""
+  filePaths:
+    kafkaBefore: "/examples/kafka/kafka-persistent.yaml"
+    kafkaAfter: "/examples/kafka/kafka-persistent.yaml"
+    kafkaKRaftBefore: "/examples/kafka/kraft/kafka.yaml"
+    kafkaKRaftAfter: "/examples/kafka/kraft/kafka.yaml"
 - fromVersion: HEAD
-  toVersion: 0.37.0
+  toVersion: 0.41.0
   fromExamples: HEAD
-  toExamples: strimzi-0.37.0
+  toExamples: strimzi-0.41.0
   fromUrl: HEAD
-  toUrl: https://github.com/strimzi/strimzi-kafka-operator/releases/download/0.37.0/strimzi-0.37.0.zip
+  toUrl: https://github.com/strimzi/strimzi-kafka-operator/releases/download/0.41.0/strimzi-0.41.0.zip
   fromKafkaVersionsUrl: HEAD
   additionalTopics: 2
   imagesAfterOperations:
-    zookeeper: strimzi/kafka:0.37.0-kafka-3.5.1
-    kafka: strimzi/kafka:0.37.0-kafka-3.5.1
-    topicOperator: strimzi/operator:0.37.0
-    userOperator: strimzi/operator:0.37.0
-  deployKafkaVersion: 3.5.1
+    zookeeper: strimzi/kafka:0.41.0-kafka-3.6.0
+    kafka: strimzi/kafka:0.41.0-kafka-3.6.0
+    topicOperator: strimzi/operator:0.41.0
+    userOperator: strimzi/operator:0.41.0
+  deployKafkaVersion: 3.7.0
   client:
     continuousClientsMessages: 500
   environmentInfo:
@@ -69,3 +78,10 @@
     status: stable
     flakyEnvVariable: none
     reason: Test is working on all environment used by QE.
+  featureGatesBefore: "+ContinueReconciliationOnManualRollingUpdateFailure"
+  featureGatesAfter: "-ContinueReconciliationOnManualRollingUpdateFailure"
+  filePaths:
+    kafkaBefore: "/examples/kafka/kafka-persistent.yaml"
+    kafkaAfter: "/examples/kafka/kafka-persistent.yaml"
+    kafkaKRaftBefore: "/examples/kafka/kraft/kafka.yaml"
+    kafkaKRaftAfter: "/examples/kafka/kraft/kafka.yaml"

@@ -6,18 +6,18 @@ package io.strimzi.systemtest.templates.crd;
 
 import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.fabric8.kubernetes.api.model.ConfigMap;
-import io.strimzi.api.kafka.model.CertSecretSourceBuilder;
-import io.strimzi.api.kafka.model.KafkaConnect;
-import io.strimzi.api.kafka.model.KafkaConnectBuilder;
-import io.strimzi.api.kafka.model.KafkaConnectResources;
-import io.strimzi.api.kafka.model.KafkaResources;
+import io.strimzi.api.kafka.model.common.CertSecretSourceBuilder;
+import io.strimzi.api.kafka.model.connect.KafkaConnect;
+import io.strimzi.api.kafka.model.connect.KafkaConnectBuilder;
+import io.strimzi.api.kafka.model.connect.KafkaConnectResources;
 import io.strimzi.api.kafka.model.connect.build.DockerOutput;
 import io.strimzi.api.kafka.model.connect.build.DockerOutputBuilder;
 import io.strimzi.api.kafka.model.connect.build.JarArtifactBuilder;
 import io.strimzi.api.kafka.model.connect.build.Plugin;
 import io.strimzi.api.kafka.model.connect.build.PluginBuilder;
-import io.strimzi.systemtest.Constants;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
 import io.strimzi.systemtest.Environment;
+import io.strimzi.systemtest.TestConstants;
 import io.strimzi.test.TestUtils;
 import io.strimzi.test.k8s.KubeClusterResource;
 import org.apache.logging.log4j.LogManager;
@@ -39,11 +39,11 @@ public class KafkaConnectTemplates {
     }
 
     public static KafkaConnectBuilder kafkaConnect(String name, final String namespaceName, String clusterName, int kafkaConnectReplicas) {
-        return kafkaConnect(name, namespaceName, clusterName, kafkaConnectReplicas, Constants.PATH_TO_KAFKA_CONNECT_CONFIG);
+        return kafkaConnect(name, namespaceName, clusterName, kafkaConnectReplicas, TestConstants.PATH_TO_KAFKA_CONNECT_CONFIG);
     }
 
     public static KafkaConnectBuilder kafkaConnect(String name, final String namespaceName, int kafkaConnectReplicas) {
-        return kafkaConnect(name, namespaceName, name, kafkaConnectReplicas, Constants.PATH_TO_KAFKA_CONNECT_CONFIG);
+        return kafkaConnect(name, namespaceName, name, kafkaConnectReplicas, TestConstants.PATH_TO_KAFKA_CONNECT_CONFIG);
     }
 
     public static KafkaConnectBuilder kafkaConnectWithMetrics(String name, String namespaceName, int kafkaConnectReplicas) {
@@ -51,18 +51,18 @@ public class KafkaConnectTemplates {
     }
 
     public static KafkaConnectBuilder kafkaConnectWithMetrics(String name, String namespaceName, String clusterName, int kafkaConnectReplicas) {
-        KafkaConnect kafkaConnect = getKafkaConnectFromYaml(Constants.PATH_TO_KAFKA_CONNECT_METRICS_CONFIG);
+        KafkaConnect kafkaConnect = getKafkaConnectFromYaml(TestConstants.PATH_TO_KAFKA_CONNECT_METRICS_CONFIG);
         createOrReplaceConnectMetrics(namespaceName);
         return defaultKafkaConnect(kafkaConnect, namespaceName, name, clusterName, kafkaConnectReplicas);
     }
 
     public static KafkaConnectBuilder kafkaConnectWithMetricsAndFileSinkPlugin(String name, String namespaceName, String clusterName, int replicas) {
         createOrReplaceConnectMetrics(namespaceName);
-        return kafkaConnectWithFilePlugin(name, namespaceName, clusterName, replicas, Constants.PATH_TO_KAFKA_CONNECT_METRICS_CONFIG);
+        return kafkaConnectWithFilePlugin(name, namespaceName, clusterName, replicas, TestConstants.PATH_TO_KAFKA_CONNECT_METRICS_CONFIG);
     }
 
     private static void createOrReplaceConnectMetrics(String namespaceName) {
-        ConfigMap metricsCm = TestUtils.configMapFromYaml(Constants.PATH_TO_KAFKA_CONNECT_METRICS_CONFIG, "connect-metrics");
+        ConfigMap metricsCm = TestUtils.configMapFromYaml(TestConstants.PATH_TO_KAFKA_CONNECT_METRICS_CONFIG, "connect-metrics");
         kubeClient().createConfigMapInNamespace(namespaceName, metricsCm);
     }
 
@@ -79,7 +79,7 @@ public class KafkaConnectTemplates {
                 .withNewTls()
                     .withTrustedCertificates(new CertSecretSourceBuilder().withSecretName(kafkaClusterName + "-cluster-ca-cert").withCertificate("ca.crt").build())
                 .endTls()
-                .addToConfig("group.id", KafkaConnectResources.deploymentName(name))
+                .addToConfig("group.id", KafkaConnectResources.componentName(name))
                 .addToConfig("offset.storage.topic", KafkaConnectResources.configStorageTopicOffsets(name))
                 .addToConfig("config.storage.topic", KafkaConnectResources.metricsAndLogConfigMapName(name))
                 .addToConfig("status.storage.topic", KafkaConnectResources.configStorageTopicStatus(name))
@@ -94,7 +94,7 @@ public class KafkaConnectTemplates {
     }
 
     public static KafkaConnectBuilder kafkaConnectWithFilePlugin(String name, String namespaceName, String clusterName, int replicas) {
-        return kafkaConnectWithFilePlugin(name, namespaceName, clusterName, replicas, Constants.PATH_TO_KAFKA_CONNECT_CONFIG);
+        return kafkaConnectWithFilePlugin(name, namespaceName, clusterName, replicas, TestConstants.PATH_TO_KAFKA_CONNECT_CONFIG);
     }
 
     /**
@@ -105,28 +105,50 @@ public class KafkaConnectTemplates {
      * @param replicas number of KafkaConnect replicas
      * @return KafkaConnect builder with File plugin
      */
-    @SuppressFBWarnings("DMI_RANDOM_USED_ONLY_ONCE")
     public static KafkaConnectBuilder kafkaConnectWithFilePlugin(String name, String namespaceName, String clusterName, int replicas, String pathToConnectConfig) {
-        final Plugin fileSinkPlugin = new PluginBuilder()
-            .withName("file-plugin")
-            .withArtifacts(
-                new JarArtifactBuilder()
-                    .withUrl(Environment.ST_FILE_PLUGIN_URL)
-                    .build()
-            )
-            .build();
+        return addFileSinkPluginOrImage(namespaceName, kafkaConnect(name, namespaceName, clusterName, replicas, pathToConnectConfig));
+    }
 
-        final String imageFullPath = Environment.getImageOutputRegistry(namespaceName, Constants.ST_CONNECT_BUILD_IMAGE_NAME, String.valueOf(new Random().nextInt(Integer.MAX_VALUE)));
+    /**
+     * Method for adding Connect Build with file-sink plugin to the Connect spec or set Connect's image in case that
+     * the image is set in `CONNECT_IMAGE_WITH_FILE_SINK_PLUGIN` env. variable
+     * @param namespaceName namespace for output registry
+     * @param connectBuilder builder of the Connect resource
+     * @return updated Connect resource in builder
+     */
+    @SuppressFBWarnings("DMI_RANDOM_USED_ONLY_ONCE")
+    public static KafkaConnectBuilder addFileSinkPluginOrImage(String namespaceName, KafkaConnectBuilder connectBuilder) {
+        if (!KubeClusterResource.getInstance().isMicroShift() && Environment.CONNECT_IMAGE_WITH_FILE_SINK_PLUGIN.isEmpty()) {
+            final Plugin fileSinkPlugin = new PluginBuilder()
+                .withName("file-plugin")
+                .withArtifacts(
+                    new JarArtifactBuilder()
+                        .withUrl(Environment.ST_FILE_PLUGIN_URL)
+                        .build()
+                )
+                .build();
 
-        KafkaConnectBuilder kafkaConnectBuilder = kafkaConnect(name, namespaceName, clusterName, replicas, pathToConnectConfig)
-            .editOrNewSpec()
-                .editOrNewBuild()
-                    .withPlugins(fileSinkPlugin)
-                    .withOutput(dockerOutput(imageFullPath))
-                .endBuild()
-            .endSpec();
+            final String imageFullPath = Environment.getImageOutputRegistry(namespaceName, TestConstants.ST_CONNECT_BUILD_IMAGE_NAME, String.valueOf(new Random().nextInt(Integer.MAX_VALUE)));
 
-        return kafkaConnectBuilder;
+            return connectBuilder
+                .editOrNewSpec()
+                    .editOrNewBuild()
+                        .withPlugins(fileSinkPlugin)
+                        .withOutput(dockerOutput(imageFullPath))
+                    .endBuild()
+                .endSpec();
+        } else {
+            if (KubeClusterResource.getInstance().isMicroShift()) {
+                LOGGER.warn("Using MicroShift cluster - you should have created your own Connect image with file-sink plugin and pass the image into {} env variable", Environment.CONNECT_IMAGE_WITH_FILE_SINK_PLUGIN_ENV);
+            }
+
+            LOGGER.info("Using {} image from {} env variable", Environment.CONNECT_IMAGE_WITH_FILE_SINK_PLUGIN, Environment.CONNECT_IMAGE_WITH_FILE_SINK_PLUGIN_ENV);
+
+            return connectBuilder
+                .editOrNewSpec()
+                    .withImage(Environment.CONNECT_IMAGE_WITH_FILE_SINK_PLUGIN)
+                .endSpec();
+        }
     }
 
     public static DockerOutput dockerOutput(String imageName) {

@@ -6,14 +6,14 @@ package io.strimzi.api.kafka.model.connect;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
-import io.strimzi.api.kafka.model.Constants;
-import io.strimzi.api.kafka.model.UnknownPropertyPreserving;
+import io.strimzi.api.kafka.model.common.Constants;
+import io.strimzi.api.kafka.model.common.UnknownPropertyPreserving;
 import io.strimzi.crdgenerator.annotations.Description;
 import io.strimzi.crdgenerator.annotations.DescriptionFile;
 import io.sundr.builder.annotations.Buildable;
 import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
-import java.io.Serializable;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,13 +29,11 @@ import java.util.Map;
 @JsonInclude(JsonInclude.Include.NON_DEFAULT)
 @JsonPropertyOrder({ "env", "volumes" })
 @EqualsAndHashCode
-public class ExternalConfiguration implements Serializable, UnknownPropertyPreserving {
-
-    private static final long serialVersionUID = 1L;
-
+@ToString
+public class ExternalConfiguration implements UnknownPropertyPreserving {
     private List<ExternalConfigurationEnv> env;
     private List<ExternalConfigurationVolumeSource> volumes;
-    private Map<String, Object> additionalProperties = new HashMap<>(0);
+    private Map<String, Object> additionalProperties;
 
     @Description("Makes data from a Secret or ConfigMap available in the Kafka Connect pods as environment variables.")
     @JsonInclude(value = JsonInclude.Include.NON_NULL)
@@ -59,12 +57,14 @@ public class ExternalConfiguration implements Serializable, UnknownPropertyPrese
 
     @Override
     public Map<String, Object> getAdditionalProperties() {
-        return this.additionalProperties;
+        return this.additionalProperties != null ? this.additionalProperties : Map.of();
     }
 
     @Override
     public void setAdditionalProperty(String name, Object value) {
+        if (this.additionalProperties == null) {
+            this.additionalProperties = new HashMap<>(2);
+        }
         this.additionalProperties.put(name, value);
     }
-
 }

@@ -23,19 +23,19 @@ import io.fabric8.kubernetes.api.model.Toleration;
 import io.fabric8.kubernetes.api.model.TolerationBuilder;
 import io.fabric8.kubernetes.api.model.TopologySpreadConstraint;
 import io.fabric8.kubernetes.api.model.TopologySpreadConstraintBuilder;
-import io.strimzi.api.kafka.model.ContainerEnvVar;
-import io.strimzi.api.kafka.model.JvmOptions;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBuilder;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.Probe;
-import io.strimzi.api.kafka.model.StrimziPodSet;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
-import io.strimzi.api.kafka.model.storage.JbodStorageBuilder;
-import io.strimzi.api.kafka.model.storage.PersistentClaimStorageBuilder;
-import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
+import io.strimzi.api.kafka.model.common.ContainerEnvVar;
+import io.strimzi.api.kafka.model.common.JvmOptions;
+import io.strimzi.api.kafka.model.common.Probe;
+import io.strimzi.api.kafka.model.kafka.JbodStorageBuilder;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.PersistentClaimStorageBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
+import io.strimzi.api.kafka.model.podset.StrimziPodSet;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
+import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
 import io.strimzi.operator.cluster.model.nodepools.NodePoolUtils;
 import io.strimzi.operator.common.Annotations;
 import io.strimzi.operator.common.Reconciliation;
@@ -102,14 +102,14 @@ public class KafkaClusterPodSetTest {
             .endSpec()
             .build();
 
-    private final static List<KafkaPool> POOLS = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-    private static final KafkaCluster KC = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, POOLS, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+    private final static List<KafkaPool> POOLS = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+    private static final KafkaCluster KC = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, POOLS, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
 
     @ParallelTest
     public void testPodSet()   {
         StrimziPodSet ps = KC.generatePodSets(true, null, null, brokerId -> Map.of("test-anno", KC.getPodName(brokerId))).get(0);
 
-        assertThat(ps.getMetadata().getName(), is(KafkaResources.kafkaStatefulSetName(CLUSTER)));
+        assertThat(ps.getMetadata().getName(), is(KafkaResources.kafkaComponentName(CLUSTER)));
         assertThat(ps.getMetadata().getLabels().entrySet().containsAll(KC.labels.withAdditionalLabels(null).toMap().entrySet()), is(true));
         assertThat(ps.getMetadata().getAnnotations().get(Annotations.ANNO_STRIMZI_IO_STORAGE), is(ModelUtils.encodeStorageToJson(new JbodStorageBuilder().withVolumes(new PersistentClaimStorageBuilder().withId(0).withSize("100Gi").withDeleteClaim(false).build()).build())));
         TestUtils.checkOwnerReference(ps, KAFKA);
@@ -184,7 +184,7 @@ public class KafkaClusterPodSetTest {
                 2, Map.of("PLAIN_9092", "10002")
         );
 
-        String config = KC.generatePerBrokerBrokerConfiguration(2, advertisedHostnames, advertisedPorts);
+        String config = KC.generatePerBrokerConfiguration(2, advertisedHostnames, advertisedPorts);
 
         assertThat(config, containsString("broker.id=2"));
         assertThat(config, containsString("node.id=2"));
@@ -211,12 +211,13 @@ public class KafkaClusterPodSetTest {
         assertThat(cms.size(), is(3));
 
         for (ConfigMap cm : cms)    {
-            assertThat(cm.getData().size(), is(3));
+            assertThat(cm.getData().size(), is(4));
             assertThat(cm.getMetadata().getName(), startsWith("my-cluster-kafka-"));
             KC.getSelectorLabels().toMap().forEach((key, value) -> assertThat(cm.getMetadata().getLabels(), hasEntry(key, value)));
             assertThat(cm.getData().get("log4j.properties"), is(notNullValue()));
             assertThat(cm.getData().get("server.config"), is(notNullValue()));
             assertThat(cm.getData().get("listeners.config"), is("PLAIN_9092"));
+            assertThat(cm.getData().get("metadata.state"), is(notNullValue()));
         }
     }
 
@@ -360,11 +361,11 @@ public class KafkaClusterPodSetTest {
                 .build();
 
         // Test the resources
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
         StrimziPodSet ps = kc.generatePodSets(true, null, null, brokerId -> Map.of("special", "annotation")).get(0);
 
-        assertThat(ps.getMetadata().getName(), is(KafkaResources.kafkaStatefulSetName(CLUSTER)));
+        assertThat(ps.getMetadata().getName(), is(KafkaResources.kafkaComponentName(CLUSTER)));
         assertThat(ps.getMetadata().getLabels().entrySet().containsAll(spsLabels.entrySet()), is(true));
         assertThat(ps.getMetadata().getAnnotations().entrySet().containsAll(spsAnnos.entrySet()), is(true));
         assertThat(ps.getSpec().getSelector().getMatchLabels(), is(kc.getSelectorLabels().withStrimziPoolName("kafka").toMap()));
@@ -454,8 +455,8 @@ public class KafkaClusterPodSetTest {
                 .endSpec()
                 .build();
 
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
         StrimziPodSet ps = kc.generatePodSets(true, null, null, brokerId -> new HashMap<>()).get(0);
 
         // We need to loop through the pods to make sure they have the right values
@@ -505,8 +506,8 @@ public class KafkaClusterPodSetTest {
                 .endSpec()
                 .build();
 
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
         StrimziPodSet ps = kc.generatePodSets(true, null, List.of(secret1), brokerId -> new HashMap<>()).get(0);
 
         // We need to loop through the pods to make sure they have the right values
@@ -561,8 +562,8 @@ public class KafkaClusterPodSetTest {
                 .endSpec()
                 .build();
 
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
 
         // Test generated SPS
         StrimziPodSet ps = kc.generatePodSets(false, null, null, brokerId -> new HashMap<>()).get(0);
@@ -583,8 +584,8 @@ public class KafkaClusterPodSetTest {
                 .endSpec()
                 .build();
 
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
 
         // Test generated SPS
         StrimziPodSet ps = kc.generatePodSets(false, null, null, brokerId -> new HashMap<>()).get(0);
@@ -605,8 +606,8 @@ public class KafkaClusterPodSetTest {
                 .endSpec()
                 .build();
 
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
 
         // Test generated SPS
         StrimziPodSet ps = kc.generatePodSets(false, null, null, brokerId -> new HashMap<>()).get(0);
@@ -623,8 +624,8 @@ public class KafkaClusterPodSetTest {
 
     @ParallelTest
     public void testRestrictedSecurityContext() {
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, KAFKA, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, KAFKA, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
         kc.securityProvider = new RestrictedPodSecurityProvider();
         kc.securityProvider.configure(new PlatformFeaturesAvailability(false, KubernetesVersion.MINIMAL_SUPPORTED_VERSION));
 
@@ -650,8 +651,8 @@ public class KafkaClusterPodSetTest {
                 .endMetadata()
                 .build();
 
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kc = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
 
         // Test generated SPS
         StrimziPodSet sps = kc.generatePodSets(false, null, null, brokerId -> new HashMap<>()).get(0);

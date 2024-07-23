@@ -5,12 +5,12 @@
 package io.strimzi.systemtest.utils.kafkaUtils;
 
 import io.fabric8.kubernetes.api.model.Service;
-import io.strimzi.api.kafka.model.KafkaBridge;
-import io.strimzi.systemtest.Constants;
+import io.strimzi.api.kafka.model.bridge.KafkaBridge;
+import io.strimzi.operator.common.model.Labels;
+import io.strimzi.systemtest.TestConstants;
 import io.strimzi.systemtest.resources.ResourceManager;
 import io.strimzi.systemtest.resources.ResourceOperation;
 import io.strimzi.systemtest.templates.kubernetes.ServiceTemplates;
-import io.strimzi.operator.common.model.Labels;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -29,7 +29,7 @@ public class KafkaBridgeUtils {
         map.put(Labels.STRIMZI_NAME_LABEL, clusterName + "-bridge");
 
         // Create node port service for expose bridge outside Kubernetes
-        return ServiceTemplates.getSystemtestsServiceResource(serviceName, Constants.HTTP_BRIDGE_DEFAULT_PORT, namespace, "TCP")
+        return ServiceTemplates.getSystemtestsServiceResource(serviceName, TestConstants.HTTP_BRIDGE_DEFAULT_PORT, namespace, "TCP")
                     .editSpec()
                         .withType("NodePort")
                         .withSelector(map)

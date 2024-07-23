@@ -4,6 +4,21 @@
  */
 package io.strimzi.operator.cluster.model;
 
+import io.fabric8.kubernetes.api.model.EnvVar;
+import io.fabric8.kubernetes.api.model.EnvVarBuilder;
+import io.fabric8.kubernetes.api.model.Quantity;
+import io.fabric8.kubernetes.api.model.ResourceRequirements;
+import io.fabric8.kubernetes.api.model.ResourceRequirementsBuilder;
+import io.strimzi.api.kafka.model.common.JvmOptions;
+import io.strimzi.api.kafka.model.common.SystemProperty;
+import io.strimzi.test.annotations.ParallelSuite;
+import io.strimzi.test.annotations.ParallelTest;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 import static java.util.Collections.emptyList;
 import static java.util.Collections.emptyMap;
 import static org.hamcrest.CoreMatchers.equalTo;
@@ -11,21 +26,6 @@ import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
-
-import io.fabric8.kubernetes.api.model.EnvVar;
-import io.fabric8.kubernetes.api.model.EnvVarBuilder;
-import io.fabric8.kubernetes.api.model.Quantity;
-import io.fabric8.kubernetes.api.model.ResourceRequirements;
-import io.fabric8.kubernetes.api.model.ResourceRequirementsBuilder;
-import io.strimzi.api.kafka.model.JvmOptions;
-import io.strimzi.api.kafka.model.SystemProperty;
-import io.strimzi.test.annotations.ParallelSuite;
-import io.strimzi.test.annotations.ParallelTest;
 
 @ParallelSuite
 class JvmOptionUtilsTest {
@@ -221,6 +221,29 @@ class JvmOptionUtilsTest {
             .withName(AbstractModel.ENV_VAR_KAFKA_JVM_PERFORMANCE_OPTS)
             .withValue("-XX:+UnlockDiagnosticVMOptions -XX:a=1 -XX:b=2 -XX:c=3 -XX:-d -XX:+e -XX:z=anything")
             .build();
+        assertThat(envVars, equalTo(List.of(expectedPerformanceOpts)));
+    }
+
+    @ParallelTest
+    void testThatUnlockExperimentalVMOptionsPerformanceOptionIsAlwaysSetFirst() {
+        // when
+        var envVars = new ArrayList<EnvVar>();
+        var jvmOptions = new JvmOptions();
+        jvmOptions.setXx(Map.of(
+                "a", "1",
+                "b", "false",
+                "c", "true",
+                "UnlockExperimentalVMOptions", "true",
+                "z", "anything"));
+
+        // when
+        JvmOptionUtils.jvmPerformanceOptions(envVars, jvmOptions);
+
+        // then
+        var expectedPerformanceOpts = new EnvVarBuilder()
+                .withName(AbstractModel.ENV_VAR_KAFKA_JVM_PERFORMANCE_OPTS)
+                .withValue("-XX:+UnlockExperimentalVMOptions -XX:a=1 -XX:-b -XX:+c -XX:z=anything")
+                .build();
         assertThat(envVars, equalTo(List.of(expectedPerformanceOpts)));
     }
 

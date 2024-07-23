@@ -5,28 +5,29 @@
 package io.strimzi.operator.cluster.operator.assembly;
 
 import io.fabric8.kubernetes.api.model.Service;
-import io.strimzi.api.kafka.model.Kafka;
-import io.strimzi.api.kafka.model.KafkaBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
-import io.strimzi.api.kafka.model.status.ListenerStatus;
-import io.strimzi.operator.cluster.model.MockSharedEnvironmentProvider;
-import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
+import io.strimzi.api.kafka.model.kafka.Kafka;
+import io.strimzi.api.kafka.model.kafka.KafkaBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
+import io.strimzi.api.kafka.model.kafka.listener.ListenerStatus;
 import io.strimzi.operator.cluster.KafkaVersionTestUtils;
+import io.strimzi.operator.cluster.PlatformFeaturesAvailability;
 import io.strimzi.operator.cluster.ResourceUtils;
 import io.strimzi.operator.cluster.model.KafkaCluster;
+import io.strimzi.operator.cluster.model.KafkaMetadataConfigurationState;
 import io.strimzi.operator.cluster.model.KafkaPool;
 import io.strimzi.operator.cluster.model.KafkaVersion;
+import io.strimzi.operator.cluster.model.MockSharedEnvironmentProvider;
+import io.strimzi.operator.cluster.model.SharedEnvironmentProvider;
 import io.strimzi.operator.cluster.model.nodepools.NodePoolUtils;
 import io.strimzi.operator.cluster.operator.resource.ResourceOperatorSupplier;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.IngressOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.RouteOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.SecretOperator;
+import io.strimzi.operator.cluster.operator.resource.kubernetes.ServiceOperator;
 import io.strimzi.operator.common.Reconciliation;
-import io.strimzi.operator.cluster.model.SharedEnvironmentProvider;
 import io.strimzi.operator.common.model.Labels;
-import io.strimzi.operator.common.operator.resource.IngressOperator;
 import io.strimzi.operator.common.operator.resource.ReconcileResult;
-import io.strimzi.operator.common.operator.resource.RouteOperator;
-import io.strimzi.operator.common.operator.resource.SecretOperator;
-import io.strimzi.operator.common.operator.resource.ServiceOperator;
 import io.strimzi.platform.KubernetesVersion;
 import io.vertx.core.Future;
 import io.vertx.junit5.Checkpoint;
@@ -97,8 +98,8 @@ public class KafkaListenerReconcilerSkipBootstrapLoadBalancerTest {
                     .endEntityOperator()
                 .endSpec()
                 .build();
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
 
         ResourceOperatorSupplier supplier = prepareResourceOperatorSupplier();
 
@@ -172,8 +173,8 @@ public class KafkaListenerReconcilerSkipBootstrapLoadBalancerTest {
                     .endEntityOperator()
                 .endSpec()
                 .build();
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
 
         ResourceOperatorSupplier supplier = prepareResourceOperatorSupplier();
 
@@ -241,8 +242,8 @@ public class KafkaListenerReconcilerSkipBootstrapLoadBalancerTest {
                     .endEntityOperator()
                 .endSpec()
                 .build();
-        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), false, SHARED_ENV_PROVIDER);
-        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, false, null, SHARED_ENV_PROVIDER);
+        List<KafkaPool> pools = NodePoolUtils.createKafkaPools(Reconciliation.DUMMY_RECONCILIATION, kafka, null, Map.of(), Map.of(), KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, false, SHARED_ENV_PROVIDER);
+        KafkaCluster kafkaCluster = KafkaCluster.fromCrd(Reconciliation.DUMMY_RECONCILIATION, kafka, pools, VERSIONS, KafkaVersionTestUtils.DEFAULT_ZOOKEEPER_VERSION_CHANGE, KafkaMetadataConfigurationState.ZK, null, SHARED_ENV_PROVIDER);
 
         ResourceOperatorSupplier supplier = prepareResourceOperatorSupplier();
 

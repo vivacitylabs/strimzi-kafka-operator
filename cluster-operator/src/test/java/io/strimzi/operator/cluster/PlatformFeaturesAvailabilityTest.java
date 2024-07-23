@@ -13,6 +13,7 @@ import io.fabric8.kubernetes.api.model.GroupVersionForDiscoveryBuilder;
 import io.fabric8.kubernetes.client.ConfigBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
+import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.VersionInfo;
 import io.strimzi.platform.KubernetesVersion;
 import io.vertx.core.Promise;
@@ -34,6 +35,8 @@ import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
+import static org.hamcrest.CoreMatchers.containsString;
+import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 
@@ -48,16 +51,17 @@ public class PlatformFeaturesAvailabilityTest {
     public void testVersionDetectionOpenShift(Vertx vertx, VertxTestContext context) throws InterruptedException, ExecutionException {
         String version = """
                 {
-                  "major": "1",
-                  "minor": "21",
-                  "gitVersion": "v1.21.1",
+                  "major": "%s",
+                  "minor": "%S",
+                  "gitVersion": "v%s.%s.1",
                   "gitCommit": "c4d752765b3bbac2237bf87cf0b1c2e307844666",
                   "gitTreeState": "clean",
                   "buildDate": "2020-12-18T12:00:47Z",
                   "goVersion": "go1.15.5",
                   "compiler": "gc",
                   "platform": "linux/amd64"
-                }""";
+                }"""
+                .formatted(KubernetesVersion.MINIMAL_SUPPORTED_MAJOR, KubernetesVersion.MINIMAL_SUPPORTED_MINOR, KubernetesVersion.MINIMAL_SUPPORTED_MAJOR, KubernetesVersion.MINIMAL_SUPPORTED_MINOR);
 
         startMockApi(vertx, version, Collections.emptyList());
 
@@ -66,7 +70,7 @@ public class PlatformFeaturesAvailabilityTest {
         Checkpoint a = context.checkpoint();
 
         PlatformFeaturesAvailability.create(vertx, client).onComplete(context.succeeding(pfa -> context.verify(() -> {
-            assertThat("Versions are not equal", pfa.getKubernetesVersion(), is(KubernetesVersion.V1_21));
+            assertThat("Versions are not equal", pfa.getKubernetesVersion(), is(KubernetesVersion.MINIMAL_SUPPORTED_VERSION));
             a.flag();
         })));
     }
@@ -75,16 +79,17 @@ public class PlatformFeaturesAvailabilityTest {
     public void testVersionDetectionMinikube(Vertx vertx, VertxTestContext context) throws InterruptedException, ExecutionException {
         String version = """
                 {
-                  "major": "1",
-                  "minor": "21",
-                  "gitVersion": "v1.21.1",
+                  "major": "%s",
+                  "minor": "%s",
+                  "gitVersion": "v%s.%s.1",
                   "gitCommit": "c4d752765b3bbac2237bf87cf0b1c2e307844666",
                   "gitTreeState": "clean",
                   "buildDate": "2020-12-18T12:09:25Z",
                   "goVersion": "go1.15.5",
                   "compiler": "gc",
                   "platform": "linux/amd64"
-                }""";
+                }"""
+                .formatted(KubernetesVersion.MINIMAL_SUPPORTED_MAJOR, KubernetesVersion.MINIMAL_SUPPORTED_MINOR, KubernetesVersion.MINIMAL_SUPPORTED_MAJOR, KubernetesVersion.MINIMAL_SUPPORTED_MINOR);
 
         startMockApi(vertx, version, Collections.emptyList());
 
@@ -93,7 +98,38 @@ public class PlatformFeaturesAvailabilityTest {
         Checkpoint async = context.checkpoint();
 
         PlatformFeaturesAvailability.create(vertx, client).onComplete(context.succeeding(pfa -> context.verify(() -> {
-            assertThat("Versions are not equal", pfa.getKubernetesVersion(), is(KubernetesVersion.V1_21));
+            assertThat("Versions are not equal", pfa.getKubernetesVersion(), is(KubernetesVersion.MINIMAL_SUPPORTED_VERSION));
+            async.flag();
+        })));
+    }
+
+    @Test
+    public void testVersionDetectionWrongVersion(Vertx vertx, VertxTestContext context) throws InterruptedException, ExecutionException {
+        String version = "Not a proper version JSON";
+
+        startMockApi(vertx, version, Collections.emptyList());
+
+        KubernetesClient client = buildKubernetesClient("127.0.0.1:" + server.actualPort());
+
+        Checkpoint async = context.checkpoint();
+
+        PlatformFeaturesAvailability.create(vertx, client).onComplete(context.failing(e -> context.verify(() -> {
+            assertThat("Versions are not equal", e, instanceOf(KubernetesClientException.class));
+            async.flag();
+        })));
+    }
+
+    @Test
+    public void testVersionDetectionFailure(Vertx vertx, VertxTestContext context) throws InterruptedException, ExecutionException {
+        startFailingMockApi(vertx);
+
+        KubernetesClient client = buildKubernetesClient("127.0.0.1:" + server.actualPort());
+
+        Checkpoint async = context.checkpoint();
+
+        PlatformFeaturesAvailability.create(vertx, client).onComplete(context.failing(e -> context.verify(() -> {
+            assertThat(e, instanceOf(KubernetesClientException.class));
+            assertThat(e.getMessage(), containsString("Forbidden"));
             async.flag();
         })));
     }
@@ -172,6 +208,22 @@ public class PlatformFeaturesAvailabilityTest {
             assertThat(pfa.hasRoutes(), is(false));
             assertThat(pfa.hasBuilds(), is(false));
             assertThat(pfa.hasImages(), is(false));
+            async.flag();
+        })));
+    }
+
+    @Test
+    public void testApiDetectionFailure(Vertx vertx, VertxTestContext context) throws InterruptedException, ExecutionException {
+        startFailingMockApi(vertx);
+
+        KubernetesClient client = buildKubernetesClient("127.0.0.1:" + server.actualPort());
+
+        Checkpoint async = context.checkpoint();
+
+        PlatformFeaturesAvailability.create(vertx, client).onComplete(context.failing(e -> context.verify(() -> {
+            assertThat(e, instanceOf(KubernetesClientException.class));
+            assertThat(e.getMessage(), containsString("Forbidden"));
+
             async.flag();
         })));
     }
@@ -285,6 +337,16 @@ public class PlatformFeaturesAvailabilityTest {
 
         return apiGroup;
     }
+
+    void startFailingMockApi(Vertx vertx) throws InterruptedException, ExecutionException {
+        HttpServer httpServer = vertx.createHttpServer().requestHandler(request -> {
+            // 403 causes a fast failure without retry (for example 500 would cause retry and test will run for a much longer time)
+            request.response().setStatusCode(403).setStatusMessage("Mock error").end();
+        });
+
+        server = httpServer.listen(0).toCompletionStage().toCompletableFuture().get();
+    }
+
 
     @AfterEach()
     void teardown() throws ExecutionException, InterruptedException {

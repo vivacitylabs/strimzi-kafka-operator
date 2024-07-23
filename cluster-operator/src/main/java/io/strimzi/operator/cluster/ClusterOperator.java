@@ -4,18 +4,18 @@
  */
 package io.strimzi.operator.cluster;
 
-import io.strimzi.api.kafka.model.KafkaConnector;
+import io.strimzi.api.kafka.model.connector.KafkaConnector;
 import io.strimzi.api.kafka.model.nodepool.KafkaNodePool;
+import io.strimzi.operator.cluster.operator.assembly.AbstractOperator;
 import io.strimzi.operator.cluster.operator.assembly.KafkaAssemblyOperator;
 import io.strimzi.operator.cluster.operator.assembly.KafkaBridgeAssemblyOperator;
 import io.strimzi.operator.cluster.operator.assembly.KafkaConnectAssemblyOperator;
 import io.strimzi.operator.cluster.operator.assembly.KafkaMirrorMaker2AssemblyOperator;
 import io.strimzi.operator.cluster.operator.assembly.KafkaMirrorMakerAssemblyOperator;
 import io.strimzi.operator.cluster.operator.assembly.KafkaRebalanceAssemblyOperator;
+import io.strimzi.operator.cluster.operator.assembly.ReconnectingWatcher;
 import io.strimzi.operator.cluster.operator.assembly.StrimziPodSetController;
 import io.strimzi.operator.cluster.operator.resource.ResourceOperatorSupplier;
-import io.strimzi.operator.cluster.operator.assembly.AbstractOperator;
-import io.strimzi.operator.cluster.operator.assembly.ReconnectingWatcher;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.AsyncResult;
 import io.vertx.core.Future;
@@ -117,14 +117,12 @@ public class ClusterOperator extends AbstractVerticle {
                 }));
             }
 
-            if (config.featureGates().kafkaNodePoolsEnabled())  {
-                // When node pools are enabled, we create the NodePool watch
-                startFutures.add(kafkaAssemblyOperator.createNodePoolWatch(namespace).compose(w -> {
-                    LOGGER.info("Opened watch for {} operator", KafkaNodePool.RESOURCE_KIND);
-                    watchByKind.put(KafkaNodePool.RESOURCE_KIND, w);
-                    return Future.succeededFuture();
-                }));
-            }
+            // Start the NodePool watch
+            startFutures.add(kafkaAssemblyOperator.createNodePoolWatch(namespace).compose(w -> {
+                LOGGER.info("Opened watch for {} operator", KafkaNodePool.RESOURCE_KIND);
+                watchByKind.put(KafkaNodePool.RESOURCE_KIND, w);
+                return Future.succeededFuture();
+            }));
 
             // Start connector watch and add it to the map as well
             startFutures.add(kafkaConnectAssemblyOperator.createConnectorWatch(namespace).compose(w -> {
@@ -150,8 +148,7 @@ public class ClusterOperator extends AbstractVerticle {
     }
 
     private Future<Void> maybeStartStrimziPodSetController() {
-        Promise<Void> handler = Promise.promise();
-        vertx.executeBlocking(future -> {
+        return vertx.executeBlocking(() -> {
             try {
                 strimziPodSetController = new StrimziPodSetController(
                         namespace,
@@ -165,13 +162,12 @@ public class ClusterOperator extends AbstractVerticle {
                         config.getPodSetControllerWorkQueueSize()
                 );
                 strimziPodSetController.start();
-                future.complete();
+                return null;
             } catch (Throwable e) {
                 LOGGER.error("StrimziPodSetController start failed");
-                future.fail(e);
+                throw e;
             }
-        }, handler);
-        return handler.future();
+        });
     }
 
     @Override

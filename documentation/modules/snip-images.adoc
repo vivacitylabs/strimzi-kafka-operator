@@ -6,10 +6,11 @@
 
 |Kafka
 a|
-* {DockerOrg}/kafka:{DockerTag}-kafka-3.4.0
-* {DockerOrg}/kafka:{DockerTag}-kafka-3.4.1
-* {DockerOrg}/kafka:{DockerTag}-kafka-3.5.0
-* {DockerOrg}/kafka:{DockerTag}-kafka-3.5.1
+* {DockerOrg}/kafka:{DockerTag}-kafka-3.6.0
+* {DockerOrg}/kafka:{DockerTag}-kafka-3.6.1
+* {DockerOrg}/kafka:{DockerTag}-kafka-3.6.2
+* {DockerOrg}/kafka:{DockerTag}-kafka-3.7.0
+* {DockerOrg}/kafka:{DockerTag}-kafka-3.7.1
 
 a|
 Strimzi image for running Kafka, including:
@@ -18,7 +19,6 @@ Strimzi image for running Kafka, including:
 * Kafka Connect
 * Kafka MirrorMaker
 * ZooKeeper
-* TLS Sidecars
 * Cruise Control
 
 |Operator
@@ -38,7 +38,7 @@ a|
 * {DockerOrg}/kafka-bridge:{BridgeDockerTag}
 
 a|
-Strimzi image for running the Strimzi kafka Bridge
+Strimzi image for running the Kafka Bridge
 
 |Strimzi Drain Cleaner
 a|

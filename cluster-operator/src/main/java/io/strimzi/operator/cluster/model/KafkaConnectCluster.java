@@ -23,7 +23,6 @@ import io.fabric8.kubernetes.api.model.Volume;
 import io.fabric8.kubernetes.api.model.VolumeBuilder;
 import io.fabric8.kubernetes.api.model.VolumeMount;
 import io.fabric8.kubernetes.api.model.VolumeMountBuilder;
-import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicy;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicyIngressRule;
 import io.fabric8.kubernetes.api.model.networking.v1.NetworkPolicyPeer;
@@ -33,32 +32,31 @@ import io.fabric8.kubernetes.api.model.rbac.RoleRef;
 import io.fabric8.kubernetes.api.model.rbac.RoleRefBuilder;
 import io.fabric8.kubernetes.api.model.rbac.Subject;
 import io.fabric8.kubernetes.api.model.rbac.SubjectBuilder;
-import io.strimzi.api.kafka.model.CertSecretSource;
-import io.strimzi.api.kafka.model.ClientTls;
-import io.strimzi.api.kafka.model.JvmOptions;
-import io.strimzi.api.kafka.model.KafkaConnect;
-import io.strimzi.api.kafka.model.KafkaConnectResources;
-import io.strimzi.api.kafka.model.KafkaConnectSpec;
-import io.strimzi.api.kafka.model.Probe;
-import io.strimzi.api.kafka.model.ProbeBuilder;
-import io.strimzi.api.kafka.model.Rack;
-import io.strimzi.api.kafka.model.StrimziPodSet;
-import io.strimzi.api.kafka.model.authentication.KafkaClientAuthentication;
+import io.strimzi.api.kafka.model.common.ClientTls;
+import io.strimzi.api.kafka.model.common.JvmOptions;
+import io.strimzi.api.kafka.model.common.Probe;
+import io.strimzi.api.kafka.model.common.ProbeBuilder;
+import io.strimzi.api.kafka.model.common.Rack;
+import io.strimzi.api.kafka.model.common.authentication.KafkaClientAuthentication;
+import io.strimzi.api.kafka.model.common.template.ContainerTemplate;
+import io.strimzi.api.kafka.model.common.template.DeploymentStrategy;
+import io.strimzi.api.kafka.model.common.template.DeploymentTemplate;
+import io.strimzi.api.kafka.model.common.template.InternalServiceTemplate;
+import io.strimzi.api.kafka.model.common.template.PodDisruptionBudgetTemplate;
+import io.strimzi.api.kafka.model.common.template.PodTemplate;
+import io.strimzi.api.kafka.model.common.template.ResourceTemplate;
+import io.strimzi.api.kafka.model.common.tracing.JaegerTracing;
+import io.strimzi.api.kafka.model.common.tracing.OpenTelemetryTracing;
+import io.strimzi.api.kafka.model.common.tracing.Tracing;
 import io.strimzi.api.kafka.model.connect.ExternalConfiguration;
 import io.strimzi.api.kafka.model.connect.ExternalConfigurationEnv;
 import io.strimzi.api.kafka.model.connect.ExternalConfigurationEnvVarSource;
 import io.strimzi.api.kafka.model.connect.ExternalConfigurationVolumeSource;
-import io.strimzi.api.kafka.model.template.ContainerTemplate;
-import io.strimzi.api.kafka.model.template.DeploymentStrategy;
-import io.strimzi.api.kafka.model.template.DeploymentTemplate;
-import io.strimzi.api.kafka.model.template.InternalServiceTemplate;
-import io.strimzi.api.kafka.model.template.KafkaConnectTemplate;
-import io.strimzi.api.kafka.model.template.PodDisruptionBudgetTemplate;
-import io.strimzi.api.kafka.model.template.PodTemplate;
-import io.strimzi.api.kafka.model.template.ResourceTemplate;
-import io.strimzi.api.kafka.model.tracing.JaegerTracing;
-import io.strimzi.api.kafka.model.tracing.OpenTelemetryTracing;
-import io.strimzi.api.kafka.model.tracing.Tracing;
+import io.strimzi.api.kafka.model.connect.KafkaConnect;
+import io.strimzi.api.kafka.model.connect.KafkaConnectResources;
+import io.strimzi.api.kafka.model.connect.KafkaConnectSpec;
+import io.strimzi.api.kafka.model.connect.KafkaConnectTemplate;
+import io.strimzi.api.kafka.model.podset.StrimziPodSet;
 import io.strimzi.operator.cluster.ClusterOperatorConfig;
 import io.strimzi.operator.cluster.model.jmx.JmxModel;
 import io.strimzi.operator.cluster.model.jmx.SupportsJmx;
@@ -80,7 +78,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static io.strimzi.api.kafka.model.template.DeploymentStrategy.ROLLING_UPDATE;
+import static io.strimzi.api.kafka.model.common.template.DeploymentStrategy.ROLLING_UPDATE;
 
 /**
  * Kafka Connect model class
@@ -123,7 +121,6 @@ public class KafkaConnectCluster extends AbstractModel implements SupportsMetric
     protected static final String ENV_VAR_KAFKA_CONNECT_OAUTH_REFRESH_TOKEN = "KAFKA_CONNECT_OAUTH_REFRESH_TOKEN";
     protected static final String ENV_VAR_KAFKA_CONNECT_OAUTH_PASSWORD_GRANT_PASSWORD = "KAFKA_CONNECT_OAUTH_PASSWORD_GRANT_PASSWORD";
     protected static final String ENV_VAR_STRIMZI_TRACING = "STRIMZI_TRACING";
-    protected static final String ENV_VAR_STRIMZI_STABLE_IDENTITIES_ENABLED = "STRIMZI_STABLE_IDENTITIES_ENABLED";
 
     protected static final String CO_ENV_VAR_CUSTOM_CONNECT_POD_LABELS = "STRIMZI_CUSTOM_KAFKA_CONNECT_LABELS";
 
@@ -171,7 +168,7 @@ public class KafkaConnectCluster extends AbstractModel implements SupportsMetric
      * @param sharedEnvironmentProvider Shared environment provider
      */
     protected KafkaConnectCluster(Reconciliation reconciliation, HasMetadata resource, SharedEnvironmentProvider sharedEnvironmentProvider) {
-        this(reconciliation, resource, KafkaConnectResources.deploymentName(resource.getMetadata().getName()), COMPONENT_TYPE, sharedEnvironmentProvider);
+        this(reconciliation, resource, KafkaConnectResources.componentName(resource.getMetadata().getName()), COMPONENT_TYPE, sharedEnvironmentProvider);
     }
 
     /**
@@ -376,7 +373,7 @@ public class KafkaConnectCluster extends AbstractModel implements SupportsMetric
         }
 
         if (tls != null) {
-            VolumeUtils.createSecretVolume(volumeList, tls.getTrustedCertificates(), isOpenShift);
+            CertUtils.createTrustedCertificatesVolumes(volumeList, tls.getTrustedCertificates(), isOpenShift);
         }
         AuthenticationUtils.configureClientAuthenticationVolumes(authentication, volumeList, "oauth-certs", isOpenShift);
         volumeList.addAll(getExternalConfigurationVolumes(isOpenShift));
@@ -437,7 +434,7 @@ public class KafkaConnectCluster extends AbstractModel implements SupportsMetric
         }
 
         if (tls != null) {
-            VolumeUtils.createSecretVolumeMount(volumeMountList, tls.getTrustedCertificates(), TLS_CERTS_BASE_VOLUME_MOUNT);
+            CertUtils.createTrustedCertificatesVolumeMounts(volumeMountList, tls.getTrustedCertificates(), TLS_CERTS_BASE_VOLUME_MOUNT);
         }
         AuthenticationUtils.configureClientAuthenticationVolumeMounts(authentication, volumeMountList, TLS_CERTS_BASE_VOLUME_MOUNT, PASSWORD_VOLUME_MOUNT, OAUTH_TLS_CERTS_BASE_VOLUME_MOUNT, "oauth-certs");
         volumeMountList.addAll(getExternalConfigurationVolumeMounts());
@@ -478,51 +475,6 @@ public class KafkaConnectCluster extends AbstractModel implements SupportsMetric
             builder = ModelUtils.populateAffinityBuilderWithRackLabelSelector(builder, userAffinity, rack.getTopologyKey());
         }
         return builder.build();
-    }
-
-    /**
-     * Generates the Kafka Connect deployment
-     *
-     * @param replicas              Number of replicas the deployment should have
-     * @param deploymentAnnotations Map with Deployment annotations
-     * @param podAnnotations        Map with Pod annotations
-     * @param isOpenShift           Flag indicating if we are on OpenShift or not
-     * @param imagePullPolicy       Image pull policy
-     * @param imagePullSecrets      List of image pull Secrets
-     * @param customContainerImage  Custom container image produced by Kafka Connect Build. If null, the default
-     *                              image will be used.
-     * @return Generated deployment
-     */
-    public Deployment generateDeployment(int replicas,
-                                         Map<String, String> deploymentAnnotations,
-                                         Map<String, String> podAnnotations,
-                                         boolean isOpenShift,
-                                         ImagePullPolicy imagePullPolicy,
-                                         List<LocalObjectReference> imagePullSecrets,
-                                         String customContainerImage) {
-        return WorkloadUtils.createDeployment(
-                componentName,
-                namespace,
-                labels,
-                ownerReference,
-                templateDeployment,
-                replicas,
-                deploymentAnnotations,
-                WorkloadUtils.deploymentStrategy(TemplateUtils.deploymentStrategy(templateDeployment, ROLLING_UPDATE)),
-                WorkloadUtils.createPodTemplateSpec(
-                        componentName,
-                        labels,
-                        templatePod,
-                        defaultPodLabels(),
-                        podAnnotations,
-                        getMergedAffinity(),
-                        ContainerUtils.listOrNull(createInitContainer(imagePullPolicy)),
-                        List.of(createContainer(imagePullPolicy, customContainerImage, false)),
-                        getVolumes(isOpenShift),
-                        imagePullSecrets,
-                        securityProvider.kafkaConnectPodSecurityContext(new PodSecurityProviderContextImpl(templatePod))
-                )
-        );
     }
 
     /**
@@ -575,7 +527,7 @@ public class KafkaConnectCluster extends AbstractModel implements SupportsMetric
                         componentName,
                         getMergedAffinity(),
                         ContainerUtils.listOrNull(createInitContainer(imagePullPolicy)),
-                        List.of(createContainer(imagePullPolicy, customContainerImage, true)),
+                        List.of(createContainer(imagePullPolicy, customContainerImage)),
                         getVolumes(isOpenShift),
                         imagePullSecrets,
                         securityProvider.kafkaConnectPodSecurityContext(new PodSecurityProviderContextImpl(templatePod))
@@ -603,14 +555,14 @@ public class KafkaConnectCluster extends AbstractModel implements SupportsMetric
         }
     }
 
-    private Container createContainer(ImagePullPolicy imagePullPolicy, String customContainerImage, boolean stableIdentities) {
+    private Container createContainer(ImagePullPolicy imagePullPolicy, String customContainerImage) {
         return ContainerUtils.createContainer(
                 componentName,
                 customContainerImage != null ? customContainerImage : image,
                 List.of(getCommand()),
                 securityProvider.kafkaConnectContainerSecurityContext(new ContainerSecurityProviderContextImpl(templateContainer)),
                 resources,
-                getEnvVars(stableIdentities),
+                getEnvVars(),
                 getContainerPortList(),
                 getVolumeMounts(),
                 ProbeUtils.httpProbe(livenessProbeOptions, "/", REST_API_PORT_NAME),
@@ -644,7 +596,7 @@ public class KafkaConnectCluster extends AbstractModel implements SupportsMetric
         return "/opt/kafka/kafka_connect_run.sh";
     }
 
-    protected List<EnvVar> getEnvVars(boolean stableIdentities) {
+    protected List<EnvVar> getEnvVars() {
         List<EnvVar> varList = new ArrayList<>();
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_KAFKA_CONNECT_CONFIGURATION, configuration.getConfiguration()));
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_KAFKA_CONNECT_METRICS_ENABLED, String.valueOf(metrics.isEnabled())));
@@ -674,29 +626,14 @@ public class KafkaConnectCluster extends AbstractModel implements SupportsMetric
 
         ContainerUtils.addContainerEnvsToExistingEnvs(reconciliation, varList, templateContainer);
 
-        if (stableIdentities)   {
-            varList.add(ContainerUtils.createEnvVar(ENV_VAR_STRIMZI_STABLE_IDENTITIES_ENABLED, "true"));
-        }
-
         return varList;
     }
 
     private void populateTLSEnvVars(final List<EnvVar> varList) {
         varList.add(ContainerUtils.createEnvVar(ENV_VAR_KAFKA_CONNECT_TLS, "true"));
 
-        List<CertSecretSource> trustedCertificates = tls.getTrustedCertificates();
-
-        if (trustedCertificates != null && trustedCertificates.size() > 0) {
-            StringBuilder sb = new StringBuilder();
-            boolean separator = false;
-            for (CertSecretSource certSecretSource : trustedCertificates) {
-                if (separator) {
-                    sb.append(";");
-                }
-                sb.append(certSecretSource.getSecretName()).append("/").append(certSecretSource.getCertificate());
-                separator = true;
-            }
-            varList.add(ContainerUtils.createEnvVar(ENV_VAR_KAFKA_CONNECT_TRUSTED_CERTS, sb.toString()));
+        if (tls.getTrustedCertificates() != null && !tls.getTrustedCertificates().isEmpty()) {
+            varList.add(ContainerUtils.createEnvVar(ENV_VAR_KAFKA_CONNECT_TRUSTED_CERTS, CertUtils.trustedCertsEnvVar(tls.getTrustedCertificates())));
         }
     }
 
@@ -774,16 +711,10 @@ public class KafkaConnectCluster extends AbstractModel implements SupportsMetric
     /**
      * Generates the PodDisruptionBudget
      *
-     * @param stableIdentities  Indicates whether the StableConnectIdentities (use of StrimziPodSets) feature gate is enabled or not
-     *
      * @return The pod disruption budget.
      */
-    public PodDisruptionBudget generatePodDisruptionBudget(boolean stableIdentities) {
-        if (stableIdentities) {
-            return PodDisruptionBudgetUtils.createCustomControllerPodDisruptionBudget(componentName, namespace, labels, ownerReference, templatePodDisruptionBudget, replicas);
-        } else {
-            return PodDisruptionBudgetUtils.createPodDisruptionBudget(componentName, namespace, labels, ownerReference, templatePodDisruptionBudget);
-        }
+    public PodDisruptionBudget generatePodDisruptionBudget() {
+        return PodDisruptionBudgetUtils.createCustomControllerPodDisruptionBudget(componentName, namespace, labels, ownerReference, templatePodDisruptionBudget, replicas);
     }
 
     /**

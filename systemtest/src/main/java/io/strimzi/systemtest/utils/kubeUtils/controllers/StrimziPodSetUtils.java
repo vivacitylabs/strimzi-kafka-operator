@@ -8,10 +8,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.fabric8.kubernetes.api.model.Affinity;
 import io.fabric8.kubernetes.api.model.LabelSelector;
 import io.fabric8.kubernetes.api.model.Pod;
-import io.strimzi.api.kafka.model.StrimziPodSet;
-import io.strimzi.api.kafka.model.status.StrimziPodSetStatus;
+import io.strimzi.api.kafka.model.podset.StrimziPodSet;
+import io.strimzi.api.kafka.model.podset.StrimziPodSetStatus;
 import io.strimzi.operator.common.model.Labels;
-import io.strimzi.systemtest.Constants;
+import io.strimzi.systemtest.TestConstants;
 import io.strimzi.systemtest.resources.ResourceManager;
 import io.strimzi.systemtest.resources.ResourceOperation;
 import io.strimzi.systemtest.resources.crd.KafkaResource;
@@ -29,7 +29,7 @@ public class StrimziPodSetUtils {
     private StrimziPodSetUtils() {}
 
     private static final Logger LOGGER = LogManager.getLogger(StrimziPodSetUtils.class);
-    private static final long READINESS_TIMEOUT = ResourceOperation.getTimeoutForResourceReadiness(Constants.STATEFUL_SET);
+    private static final long READINESS_TIMEOUT = ResourceOperation.getTimeoutForResourceReadiness(TestConstants.STATEFUL_SET);
     private static final long DELETION_TIMEOUT = ResourceOperation.getTimeoutForResourceDeletion(StrimziPodSet.RESOURCE_KIND);
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -44,7 +44,7 @@ public class StrimziPodSetUtils {
     public static void waitForStrimziPodSetLabelsDeletion(String namespaceName, String resourceName, Collection<String> labelKeys) {
         for (final String labelKey : labelKeys) {
             LOGGER.info("Waiting for StrimziPodSet: {}/{} to change label: {} -> {}", namespaceName, resourceName, labelKey, null);
-            TestUtils.waitFor("StrimziPodSet: " + namespaceName + "/" + resourceName + " to change label: " + labelKey + " -> " + null, Constants.POLL_INTERVAL_FOR_RESOURCE_READINESS,
+            TestUtils.waitFor("StrimziPodSet: " + namespaceName + "/" + resourceName + " to change label: " + labelKey + " -> " + null, TestConstants.POLL_INTERVAL_FOR_RESOURCE_READINESS,
                 DELETION_TIMEOUT, () ->
                     StrimziPodSetResource.strimziPodSetClient().inNamespace(namespaceName).withName(resourceName).get().getMetadata().getLabels().get(labelKey) == null
             );
@@ -59,8 +59,8 @@ public class StrimziPodSetUtils {
             // ignoring strimzi.io and k8s labels
             if (!(isStrimziTag || isK8sTag)) {
                 LOGGER.info("Waiting for StrimziPodSet: {}/{} to change label: {} -> {}", namespaceName, resourceName, entry.getKey(), entry.getValue());
-                TestUtils.waitFor("StrimziPodSet: " + namespaceName + "/" + resourceName + " to change label: " + entry.getKey() + " -> " + entry.getValue(), Constants.POLL_INTERVAL_FOR_RESOURCE_READINESS,
-                    Constants.GLOBAL_TIMEOUT, () ->
+                TestUtils.waitFor("StrimziPodSet: " + namespaceName + "/" + resourceName + " to change label: " + entry.getKey() + " -> " + entry.getValue(), TestConstants.POLL_INTERVAL_FOR_RESOURCE_READINESS,
+                    TestConstants.GLOBAL_TIMEOUT, () ->
                         StrimziPodSetResource.strimziPodSetClient().inNamespace(namespaceName).withName(resourceName).get().getMetadata().getLabels().get(entry.getKey()).equals(entry.getValue())
                 );
             }
@@ -71,25 +71,25 @@ public class StrimziPodSetUtils {
      * Wait until the SPS is ready and all of its Pods are also ready with custom timeout.
      *
      * @param namespaceName Namespace name
-     * @param spsName The name of the StrimziPodSet
+     * @param clusterName name of the Kafka cluster
+     * @param componentName The name of the StrimziPodSet
      * @param expectPods The number of pods expected.
      */
-    public static void waitForAllStrimziPodSetAndPodsReady(String namespaceName, String spsName, String componentName, int expectPods, long timeout) {
-        String resourceName = componentName.contains("-kafka") ? componentName.replace("-kafka", "") : componentName.replace("-zookeeper", "");
-        LabelSelector labelSelector = KafkaResource.getLabelSelector(resourceName, componentName);
+    public static void waitForAllStrimziPodSetAndPodsReady(String namespaceName, String clusterName, String componentName, int expectPods, long timeout) {
+        LabelSelector labelSelector = KafkaResource.getLabelSelector(clusterName, componentName);
 
-        LOGGER.info("Waiting for StrimziPodSet: {}/{} to be ready", namespaceName, spsName);
-        TestUtils.waitFor("readiness of StrimziPodSet: " + namespaceName + "/" + spsName, Constants.POLL_INTERVAL_FOR_RESOURCE_READINESS, timeout,
+        LOGGER.info("Waiting for StrimziPodSet: {}/{} to be ready", namespaceName, componentName);
+        TestUtils.waitFor("readiness of StrimziPodSet: " + namespaceName + "/" + componentName, TestConstants.POLL_INTERVAL_FOR_RESOURCE_READINESS, timeout,
             () -> {
-                StrimziPodSetStatus podSetStatus = StrimziPodSetResource.strimziPodSetClient().inNamespace(namespaceName).withName(spsName).get().getStatus();
+                StrimziPodSetStatus podSetStatus = StrimziPodSetResource.strimziPodSetClient().inNamespace(namespaceName).withName(componentName).get().getStatus();
                 return podSetStatus.getPods() == podSetStatus.getReadyPods();
             },
-            () -> ResourceManager.logCurrentResourceStatus(KafkaResource.kafkaClient().inNamespace(namespaceName).withName(resourceName).get()));
+            () -> ResourceManager.logCurrentResourceStatus(KafkaResource.kafkaClient().inNamespace(namespaceName).withName(clusterName).get()));
 
-        LOGGER.info("Waiting for {} Pod(s) of StrimziPodSet {}/{} to be ready", expectPods, namespaceName, spsName);
+        LOGGER.info("Waiting for {} Pod(s) of StrimziPodSet {}/{} to be ready", expectPods, namespaceName, componentName);
         PodUtils.waitForPodsReady(namespaceName, labelSelector, expectPods, true,
-            () -> ResourceManager.logCurrentResourceStatus(KafkaResource.kafkaClient().inNamespace(namespaceName).withName(resourceName).get()));
-        LOGGER.info("StrimziPodSet: {}/{} is ready", namespaceName, spsName);
+            () -> ResourceManager.logCurrentResourceStatus(KafkaResource.kafkaClient().inNamespace(namespaceName).withName(clusterName).get()));
+        LOGGER.info("StrimziPodSet: {}/{} is ready", namespaceName, componentName);
     }
 
     public static void waitForAllStrimziPodSetAndPodsReady(String namespaceName, String spsName, String componentName, int expectPods) {
@@ -102,7 +102,7 @@ public class StrimziPodSetUtils {
      */
     public static void waitForStrimziPodSetRecovery(String namespaceName, String resourceName, String resourceUID) {
         LOGGER.info("Waiting for StrimziPodSet: {}/{}-{} recovery", namespaceName, resourceName, resourceUID);
-        TestUtils.waitFor("readiness of StrimziPodSet: " + namespaceName + "/" + resourceName, Constants.POLL_INTERVAL_FOR_RESOURCE_READINESS, Constants.TIMEOUT_FOR_RESOURCE_RECOVERY,
+        TestUtils.waitFor("readiness of StrimziPodSet: " + namespaceName + "/" + resourceName, TestConstants.POLL_INTERVAL_FOR_RESOURCE_READINESS, TestConstants.TIMEOUT_FOR_RESOURCE_RECOVERY,
             () -> !StrimziPodSetResource.strimziPodSetClient().inNamespace(namespaceName).withName(resourceName).get().getMetadata().getUid().equals(resourceUID));
         LOGGER.info("StrimziPodSet: {}/{} was recovered", namespaceName, resourceName);
     }
@@ -118,6 +118,7 @@ public class StrimziPodSetUtils {
     }
 
     public static void annotateStrimziPodSet(String namespaceName, String resourceName, Map<String, String> annotations) {
+        LOGGER.info("Annotating StrimziPodSet {}/{} with annotations: {}", namespaceName, resourceName, annotations);
         StrimziPodSetResource.replaceStrimziPodSetInSpecificNamespace(resourceName,
             strimziPodSet -> strimziPodSet.getMetadata().setAnnotations(annotations), namespaceName);
     }

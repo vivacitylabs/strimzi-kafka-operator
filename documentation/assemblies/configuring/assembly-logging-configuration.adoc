@@ -22,26 +22,25 @@ You specify a logging `type` in your logging specification:
 .Example `inline` logging configuration
 [source,shell,subs="+quotes,attributes"]
 ----
-spec:
-  # ...
-  logging:
-    type: inline
-    loggers:
-      kafka.root.logger.level: INFO
+# ...
+logging:
+  type: inline
+  loggers:
+    kafka.root.logger.level: INFO
+# ...
 ----
-
 
 .Example `external` logging configuration
 [source,shell,subs="+quotes,attributes"]
 ----
-spec:
-  # ...
-  logging:
-    type: external
-    valueFrom:
-      configMapKeyRef:
-        name: my-config-map
-        key: my-config-map-key
+# ...
+logging:
+  type: external
+  valueFrom:
+    configMapKeyRef:
+      name: my-config-map
+      key: my-config-map-key
+# ...
 ----
 
 Values for the `name` and `key` of the ConfigMap are mandatory.
@@ -66,6 +65,11 @@ For more information on configuring logging for specific Kafka components or ope
 * link:{BookURLConfiguring}#property-topic-operator-logging-reference[Topic Operator logging^]
 * link:{BookURLConfiguring}#property-user-operator-logging-reference[User Operator logging^]
 
+//creating a configmap for logging
 include::../../modules/configuring/proc-creating-configmap.adoc[leveloffset=+1]
+//cluster operator logging config
 include::../../modules/operators/ref-operator-cluster-logging-configmap.adoc[leveloffset=+1]
+//adding logging filters to operators
 include::../../modules/configuring/proc-creating-logging-filters.adoc[leveloffset=+1]
+//warnings on locks for cluster operations
+include::../../modules/configuring/con-failed-lock-warnings.adoc[leveloffset=+1]

@@ -227,6 +227,12 @@ public class KubeClient {
         return listPods(getNamespace(), clusterName, key, value);
     }
 
+    public List<String> listPodNames(String namespaceName, LabelSelector labelSelector) {
+        return listPods(namespaceName, labelSelector).stream()
+            .map(pod -> pod.getMetadata().getName())
+            .collect(Collectors.toList());
+    }
+
     public List<String> listPodNames(String key, String value) {
         return listPods(Collections.singletonMap(key, value)).stream()
                 .map(pod -> pod.getMetadata().getName())
@@ -1041,6 +1047,16 @@ public class KubeClient {
 
     public PersistentVolume getPersistentVolumeWithName(String pvName) {
         return client.persistentVolumes().withName(pvName).get();
+    }
+
+    public List<PersistentVolume> listClaimedPersistentVolumes(String namespaceName, String clusterName) {
+        return client.persistentVolumes().list().getItems().stream()
+            .filter(pv -> {
+                boolean containsClusterName = pv.getSpec().getClaimRef().getName().contains(clusterName);
+                boolean containsClusterNamespace = pv.getSpec().getClaimRef().getNamespace().contains(namespaceName);
+                return containsClusterName && containsClusterNamespace;
+            })
+            .collect(Collectors.toList());
     }
 
     // ===================================

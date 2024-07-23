@@ -4,18 +4,22 @@
  */
 package io.strimzi.systemtest.security;
 
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.KafkaUser;
-import io.strimzi.api.kafka.model.listener.KafkaListenerAuthenticationTls;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
+import io.strimzi.api.kafka.model.kafka.KafkaResources;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerAuthenticationTls;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
+import io.strimzi.api.kafka.model.user.KafkaUser;
 import io.strimzi.systemtest.AbstractST;
-import io.strimzi.systemtest.Constants;
 import io.strimzi.systemtest.Environment;
+import io.strimzi.systemtest.TestConstants;
 import io.strimzi.systemtest.annotations.ParallelTest;
 import io.strimzi.systemtest.kafkaclients.internalClients.KafkaClients;
 import io.strimzi.systemtest.kafkaclients.internalClients.KafkaClientsBuilder;
+import io.strimzi.systemtest.resources.NodePoolsConverter;
+import io.strimzi.systemtest.resources.ResourceManager;
+import io.strimzi.systemtest.resources.crd.KafkaNodePoolResource;
 import io.strimzi.systemtest.storage.TestStorage;
+import io.strimzi.systemtest.templates.crd.KafkaNodePoolTemplates;
 import io.strimzi.systemtest.templates.crd.KafkaTemplates;
 import io.strimzi.systemtest.templates.crd.KafkaTopicTemplates;
 import io.strimzi.systemtest.templates.crd.KafkaUserTemplates;
@@ -27,12 +31,11 @@ import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.extension.ExtensionContext;
 
 import java.io.IOException;
 
-import static io.strimzi.systemtest.Constants.INTERNAL_CLIENTS_USED;
-import static io.strimzi.systemtest.Constants.REGRESSION;
+import static io.strimzi.systemtest.TestConstants.INTERNAL_CLIENTS_USED;
+import static io.strimzi.systemtest.TestConstants.REGRESSION;
 import static io.strimzi.test.k8s.KubeClusterResource.cmdKubeClient;
 
 @Tag(REGRESSION)
@@ -45,29 +48,23 @@ public class OpaIntegrationST extends AbstractST {
     private static final String CLUSTER_NAME = "opa-cluster";
 
     @ParallelTest
-    void testOpaAuthorization(ExtensionContext extensionContext) {
-        final TestStorage testStorage = new TestStorage(extensionContext, Environment.TEST_SUITE_NAMESPACE);
+    void testOpaAuthorization() {
+        final TestStorage testStorage = new TestStorage(ResourceManager.getTestContext());
 
         KafkaUser goodUser = KafkaUserTemplates.tlsUser(testStorage.getNamespaceName(), CLUSTER_NAME, OPA_GOOD_USER).build();
         KafkaUser badUser = KafkaUserTemplates.tlsUser(testStorage.getNamespaceName(), CLUSTER_NAME, OPA_BAD_USER).build();
 
-        resourceManager.createResourceWithWait(extensionContext, goodUser);
-        resourceManager.createResourceWithWait(extensionContext, badUser);
+        resourceManager.createResourceWithWait(goodUser);
+        resourceManager.createResourceWithWait(badUser);
 
         LOGGER.info("Checking KafkaUser: {}/{} that is able to send and receive messages to/from Topic: {}/{}", testStorage.getNamespaceName(), OPA_GOOD_USER, testStorage.getNamespaceName(), testStorage.getTopicName());
 
-        KafkaClients kafkaClients = new KafkaClientsBuilder()
-            .withProducerName(testStorage.getProducerName())
-            .withConsumerName(testStorage.getConsumerName())
-            .withNamespaceName(testStorage.getNamespaceName())
-            .withMessageCount(testStorage.getMessageCount())
-            .withBootstrapAddress(KafkaResources.tlsBootstrapAddress(CLUSTER_NAME))
-            .withTopicName(testStorage.getTopicName())
+        KafkaClients kafkaClients = ClientUtils.getInstantTlsClientBuilder(testStorage, KafkaResources.tlsBootstrapAddress(CLUSTER_NAME))
             .withUsername(OPA_GOOD_USER)
             .build();
 
-        resourceManager.createResourceWithWait(extensionContext, kafkaClients.producerTlsStrimzi(CLUSTER_NAME), kafkaClients.consumerTlsStrimzi(CLUSTER_NAME));
-        ClientUtils.waitForClientsSuccess(testStorage);
+        resourceManager.createResourceWithWait(kafkaClients.producerTlsStrimzi(CLUSTER_NAME), kafkaClients.consumerTlsStrimzi(CLUSTER_NAME));
+        ClientUtils.waitForInstantClientSuccess(testStorage);
 
         LOGGER.info("Checking KafkaUser: {}/{} that is not able to send or receive messages to/from Topic: {}/{}", testStorage.getNamespaceName(), OPA_BAD_USER, testStorage.getNamespaceName(), testStorage.getTopicName());
 
@@ -75,46 +72,46 @@ public class OpaIntegrationST extends AbstractST {
             .withUsername(OPA_BAD_USER)
             .build();
 
-        resourceManager.createResourceWithWait(extensionContext, kafkaClients.producerTlsStrimzi(CLUSTER_NAME), kafkaClients.consumerTlsStrimzi(CLUSTER_NAME));
-        ClientUtils.waitForClientsTimeout(testStorage);
+        resourceManager.createResourceWithWait(kafkaClients.producerTlsStrimzi(CLUSTER_NAME), kafkaClients.consumerTlsStrimzi(CLUSTER_NAME));
+        ClientUtils.waitForInstantClientsTimeout(testStorage);
     }
 
     @ParallelTest
-    void testOpaAuthorizationSuperUser(ExtensionContext extensionContext) {
-        final TestStorage testStorage = new TestStorage(extensionContext, Environment.TEST_SUITE_NAMESPACE);
+    void testOpaAuthorizationSuperUser() {
+        final TestStorage testStorage = new TestStorage(ResourceManager.getTestContext());
 
         KafkaUser superuser = KafkaUserTemplates.tlsUser(testStorage.getNamespaceName(), CLUSTER_NAME, OPA_SUPERUSER).build();
 
-        resourceManager.createResourceWithWait(extensionContext, KafkaTopicTemplates.topic(CLUSTER_NAME, testStorage.getTopicName(), testStorage.getNamespaceName()).build());
-        resourceManager.createResourceWithWait(extensionContext, superuser);
+        resourceManager.createResourceWithWait(KafkaTopicTemplates.topic(CLUSTER_NAME, testStorage.getTopicName(), testStorage.getNamespaceName()).build());
+        resourceManager.createResourceWithWait(superuser);
 
         LOGGER.info("Checking KafkaUser: {}/{} that is able to send and receive messages to/from Topic: {}/{}", testStorage.getNamespaceName(), OPA_GOOD_USER, testStorage.getNamespaceName(), testStorage.getTopicName());
 
-        KafkaClients kafkaClients = new KafkaClientsBuilder()
-            .withProducerName(testStorage.getProducerName())
-            .withConsumerName(testStorage.getConsumerName())
-            .withNamespaceName(testStorage.getNamespaceName())
-            .withMessageCount(testStorage.getMessageCount())
-            .withBootstrapAddress(KafkaResources.tlsBootstrapAddress(CLUSTER_NAME))
-            .withTopicName(testStorage.getTopicName())
+        final KafkaClients kafkaClients = ClientUtils.getInstantTlsClientBuilder(testStorage, KafkaResources.tlsBootstrapAddress(CLUSTER_NAME))
             .withUsername(OPA_SUPERUSER)
             .build();
 
-        resourceManager.createResourceWithWait(extensionContext, kafkaClients.producerTlsStrimzi(CLUSTER_NAME), kafkaClients.consumerTlsStrimzi(CLUSTER_NAME));
-        ClientUtils.waitForClientsSuccess(testStorage);
+        resourceManager.createResourceWithWait(kafkaClients.producerTlsStrimzi(CLUSTER_NAME), kafkaClients.consumerTlsStrimzi(CLUSTER_NAME));
+        ClientUtils.waitForInstantClientSuccess(testStorage);
     }
 
     @BeforeAll
-    void setup(ExtensionContext extensionContext) throws Exception {
+    void setup() throws Exception {
         this.clusterOperator = this.clusterOperator
-            .defaultInstallation(extensionContext)
+            .defaultInstallation()
             .createInstallation()
             .runInstallation();
 
         // Install OPA
         cmdKubeClient(Environment.TEST_SUITE_NAMESPACE).apply(FileUtils.updateNamespaceOfYamlFile(TestUtils.USER_PATH + "/../systemtest/src/test/resources/opa/opa.yaml", Environment.TEST_SUITE_NAMESPACE));
 
-        resourceManager.createResourceWithWait(extensionContext, KafkaTemplates.kafkaEphemeral(CLUSTER_NAME, 3, 1)
+        resourceManager.createResourceWithWait(
+            NodePoolsConverter.convertNodePoolsIfNeeded(
+                KafkaNodePoolTemplates.brokerPool(Environment.TEST_SUITE_NAMESPACE, KafkaNodePoolResource.getBrokerPoolName(CLUSTER_NAME), CLUSTER_NAME, 3).build(),
+                KafkaNodePoolTemplates.controllerPool(Environment.TEST_SUITE_NAMESPACE, KafkaNodePoolResource.getControllerPoolName(CLUSTER_NAME), CLUSTER_NAME, 1).build()
+            )
+        );
+        resourceManager.createResourceWithWait(KafkaTemplates.kafkaEphemeral(CLUSTER_NAME, 3, 1)
             .editMetadata()
                 .withNamespace(Environment.TEST_SUITE_NAMESPACE)
             .endMetadata()
@@ -125,7 +122,7 @@ public class OpaIntegrationST extends AbstractST {
                         .addToSuperUsers("CN=" + OPA_SUPERUSER)
                     .endKafkaAuthorizationOpa()
                     .withListeners(new GenericKafkaListenerBuilder()
-                            .withName(Constants.TLS_LISTENER_DEFAULT_NAME)
+                            .withName(TestConstants.TLS_LISTENER_DEFAULT_NAME)
                             .withPort(9093)
                             .withType(KafkaListenerType.INTERNAL)
                             .withTls(true)

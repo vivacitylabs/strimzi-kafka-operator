@@ -10,7 +10,6 @@ import io.fabric8.kubernetes.api.model.Secret;
 import io.strimzi.operator.common.model.InvalidResourceException;
 import io.strimzi.operator.common.model.Labels;
 import io.strimzi.operator.common.model.OrderedProperties;
-
 import org.apache.kafka.common.config.ConfigResource;
 import org.quartz.CronExpression;
 
@@ -20,15 +19,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.math.BigInteger;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.KeyStore;
-import java.security.KeyStoreException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.cert.CertificateException;
-import java.security.cert.X509Certificate;
 import java.text.ParseException;
 import java.time.Instant;
 import java.util.Base64;
@@ -37,7 +33,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Objects;
 import java.util.StringTokenizer;
 import java.util.TimeZone;
 import java.util.TreeMap;
@@ -159,55 +155,31 @@ public class Util {
      * Decode binary item from Kubernetes Secret from base64 into byte array
      *
      * @param secret    Kubernetes Secret
-     * @param key       Key which should be retrieved and decoded
+     * @param field     Field which should be retrieved and decoded
      * @return          Decoded bytes
      */
-    public static byte[] decodeFromSecret(Secret secret, String key) {
-        return Base64.getDecoder().decode(secret.getData().get(key));
+    public static byte[] decodeBase64FieldFromSecret(Secret secret, String field) {
+        Objects.requireNonNull(secret);
+        String data = secret.getData().get(field);
+        if (data != null) {
+            return Base64.getDecoder().decode(data);
+        } else {
+            throw new RuntimeException(String.format("The Secret %s/%s is missing the field %s",
+                    secret.getMetadata().getNamespace(),
+                    secret.getMetadata().getName(),
+                    field));
+        }
     }
 
     /**
-     * Create a Truststore file containing the given {@code certificate} and protected with {@code password}.
-     * The file will be set to get deleted when the JVM exist.
+     * Decode binary item from Kubernetes Secret from base64 into String
      *
-     * @param prefix Prefix which will be used for the filename
-     * @param suffix Suffix which will be used for the filename
-     * @param certificates X509 certificates to put inside the Truststore
-     * @param password Password protecting the Truststore
-     * @return File with the Truststore
+     * @param secret    Kubernetes Secret
+     * @param field     Field which should be retrieved and decoded
+     * @return          Decoded String
      */
-    public static File createFileTrustStore(String prefix, String suffix, Set<X509Certificate> certificates, char[] password) {
-        try {
-            KeyStore trustStore = KeyStore.getInstance("PKCS12");
-            trustStore.load(null, password);
-
-            int aliasIndex = 0;
-            for (X509Certificate certificate : certificates) {
-                trustStore.setEntry(certificate.getSubjectX500Principal().getName() + "-" + aliasIndex, new KeyStore.TrustedCertificateEntry(certificate), null);
-                aliasIndex++;
-            }
-
-            return store(prefix, suffix, trustStore, password);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    private static File store(String prefix, String suffix, KeyStore trustStore, char[] password) throws Exception {
-        File f = null;
-        try {
-            f = Files.createTempFile(prefix, suffix).toFile();
-            f.deleteOnExit();
-            try (OutputStream os = new BufferedOutputStream(new FileOutputStream(f))) {
-                trustStore.store(os, password);
-            }
-            return f;
-        } catch (IOException | KeyStoreException | NoSuchAlgorithmException | CertificateException | RuntimeException e) {
-            if (f != null && !f.delete()) {
-                LOGGER.warnOp("Failed to delete temporary file in exception handler");
-            }
-            throw e;
-        }
+    public static String asciiFieldFromSecret(Secret secret, String field) {
+        return fromAsciiBytes(decodeBase64FieldFromSecret(secret, field));
     }
 
     /**
@@ -470,32 +442,6 @@ public class Util {
     }
 
     /**
-     * Returns concatenated string of all public keys (all .crt records) from a secret
-     *
-     * @param secret    Kubernetes Secret with certificates
-     *
-     * @return          String secrets
-     */
-    public static String certsToPemString(Secret secret)  {
-        if (secret == null || secret.getData() == null) {
-            return "";
-        } else {
-            Base64.Decoder decoder = Base64.getDecoder();
-
-            return secret
-                    .getData()
-                    .entrySet()
-                    .stream()
-                    .filter(record -> record.getKey().endsWith(".crt"))
-                    .map(record -> {
-                        byte[] bytes = decoder.decode(record.getValue());
-                        return new String(bytes, StandardCharsets.US_ASCII);
-                    })
-                    .collect(Collectors.joining("\n"));
-        }
-    }
-
-    /**
      * Checks whether maintenance time window is satisfied by a given point in time or not
      *
      * @param reconciliation        Reconciliation marker
@@ -529,13 +475,68 @@ public class Util {
     }
 
     /**
-     * Encodes a String into Base64
+     * Encodes a String into Base64.
      *
-     * @param encode    String which should be encoded
+     * @param data    String that should be encoded.
      *
-     * @return          Base64 data
+     * @return        Base64 data.
      */
-    public static String encodeToBase64(String encode)  {
-        return Base64.getEncoder().encodeToString(encode.getBytes(StandardCharsets.US_ASCII));
+    public static String encodeToBase64(String data)  {
+        return Base64.getEncoder().encodeToString(data.getBytes(StandardCharsets.US_ASCII));
     }
+    
+    /**
+     * Decodes a byte[] from Base64.
+     *
+     * @param data    String that should be decoded.
+     *
+     * @return        Plain data in byte[].
+     */
+    public static byte[] decodeBytesFromBase64(String data)  {
+        return Base64.getDecoder().decode(data);
+    }
+    
+    /**
+     * Decodes a byte[] from Base64.
+     *
+     * @param data    byte[] that should be decoded.
+     *
+     * @return        Plain data in byte[].
+     */
+    public static byte[] decodeBytesFromBase64(byte[] data)  {
+        return Base64.getDecoder().decode(data);
+    }
+
+    /**
+     * Decodes a String from Base64.
+     *
+     * @param data    String that should be decoded.
+     *
+     * @return        Plain data using US ASCII charset.
+     */
+    public static String decodeFromBase64(String data)  {
+        return decodeFromBase64(data, StandardCharsets.US_ASCII);
+    }
+    
+    /**
+     * Decodes a String from Base64.
+     *
+     * @param data    String that should be decoded.
+     * @param charset The charset for the return string
+     *
+     * @return        Plain data using specified charset.
+     */
+    public static String decodeFromBase64(String data, Charset charset)  {
+        return new String(decodeBytesFromBase64(data), charset);
+    }
+
+    /**
+     * Decodes the provided byte array using the charset StandardCharsets.US_ASCII
+     * @param bytes Byte array to convert to String
+     * @return New String object containing the provided byte array
+     */
+    public static String fromAsciiBytes(byte[] bytes) {
+        return new String(bytes, StandardCharsets.US_ASCII);
+    }
+
 }

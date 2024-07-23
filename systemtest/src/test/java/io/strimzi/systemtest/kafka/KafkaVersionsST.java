@@ -4,17 +4,17 @@
  */
 package io.strimzi.systemtest.kafka;
 
-import io.strimzi.api.kafka.model.AclOperation;
-import io.strimzi.api.kafka.model.KafkaResources;
-import io.strimzi.api.kafka.model.KafkaUser;
-import io.strimzi.api.kafka.model.listener.arraylistener.GenericKafkaListenerBuilder;
-import io.strimzi.api.kafka.model.listener.arraylistener.KafkaListenerType;
+import io.strimzi.api.kafka.model.kafka.listener.GenericKafkaListenerBuilder;
+import io.strimzi.api.kafka.model.kafka.listener.KafkaListenerType;
+import io.strimzi.api.kafka.model.user.KafkaUser;
+import io.strimzi.api.kafka.model.user.acl.AclOperation;
 import io.strimzi.systemtest.AbstractST;
-import io.strimzi.systemtest.Constants;
-import io.strimzi.systemtest.Environment;
+import io.strimzi.systemtest.TestConstants;
 import io.strimzi.systemtest.kafkaclients.internalClients.KafkaClients;
-import io.strimzi.systemtest.kafkaclients.internalClients.KafkaClientsBuilder;
+import io.strimzi.systemtest.resources.NodePoolsConverter;
+import io.strimzi.systemtest.resources.ResourceManager;
 import io.strimzi.systemtest.storage.TestStorage;
+import io.strimzi.systemtest.templates.crd.KafkaNodePoolTemplates;
 import io.strimzi.systemtest.templates.crd.KafkaTemplates;
 import io.strimzi.systemtest.templates.crd.KafkaTopicTemplates;
 import io.strimzi.systemtest.templates.crd.KafkaUserTemplates;
@@ -24,12 +24,10 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
-import static io.strimzi.systemtest.Constants.KAFKA_SMOKE;
-import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static io.strimzi.systemtest.TestConstants.KAFKA_SMOKE;
 
 @Tag(KAFKA_SMOKE)
 public class KafkaVersionsST extends AbstractST {
@@ -45,15 +43,11 @@ public class KafkaVersionsST extends AbstractST {
      *     - User Operator is working - because of SCRAM-SHA, ACLs and overall KafkaUser creations
      *     - Sending and receiving messages is working to PLAIN (with SCRAM-SHA) and TLS listeners
      * @param testKafkaVersion TestKafkaVersion added for each iteration of the parametrized test
-     * @param extensionContext context in which the current test is being executed
      */
     @ParameterizedTest(name = "Kafka version: {0}.version()")
     @MethodSource("io.strimzi.systemtest.utils.TestKafkaVersion#getSupportedKafkaVersions")
-    void testKafkaWithVersion(final TestKafkaVersion testKafkaVersion, ExtensionContext extensionContext) {
-        // skip test if KRaft mode is enabled and Kafka version is lower than 3.5.0 - https://github.com/strimzi/strimzi-kafka-operator/issues/8806
-        assumeFalse(Environment.isKRaftModeEnabled() && TestKafkaVersion.compareDottedVersions("3.5.0", testKafkaVersion.version()) == 1);
-
-        final TestStorage testStorage = new TestStorage(extensionContext);
+    void testKafkaWithVersion(final TestKafkaVersion testKafkaVersion) {
+        final TestStorage testStorage = new TestStorage(ResourceManager.getTestContext());
 
         final String kafkaUserRead = testStorage.getUsername() + "-read";
         final String kafkaUserWrite = testStorage.getUsername() + "-write";
@@ -62,7 +56,13 @@ public class KafkaVersionsST extends AbstractST {
 
         LOGGER.info("Deploying Kafka with version: {}", testKafkaVersion.version());
 
-        resourceManager.createResourceWithWait(extensionContext, KafkaTemplates.kafkaEphemeral(testStorage.getClusterName(), 3)
+        resourceManager.createResourceWithWait(
+            NodePoolsConverter.convertNodePoolsIfNeeded(
+                KafkaNodePoolTemplates.brokerPool(testStorage.getNamespaceName(), testStorage.getBrokerPoolName(), testStorage.getClusterName(), 3).build(),
+                KafkaNodePoolTemplates.controllerPool(testStorage.getNamespaceName(), testStorage.getControllerPoolName(), testStorage.getClusterName(), 3).build()
+            )
+        );
+        resourceManager.createResourceWithWait(KafkaTemplates.kafkaEphemeral(testStorage.getClusterName(), 3)
             .editMetadata()
                 .withNamespace(testStorage.getNamespaceName())
             .endMetadata()
@@ -76,7 +76,7 @@ public class KafkaVersionsST extends AbstractST {
                     .endKafkaAuthorizationSimple()
                     .withListeners(
                             new GenericKafkaListenerBuilder()
-                                    .withName(Constants.PLAIN_LISTENER_DEFAULT_NAME)
+                                    .withName(TestConstants.PLAIN_LISTENER_DEFAULT_NAME)
                                     .withPort(9092)
                                     .withType(KafkaListenerType.INTERNAL)
                                     .withTls(false)
@@ -84,7 +84,7 @@ public class KafkaVersionsST extends AbstractST {
                                     .endKafkaListenerAuthenticationScramSha512Auth()
                                     .build(),
                             new GenericKafkaListenerBuilder()
-                                    .withName(Constants.TLS_LISTENER_DEFAULT_NAME)
+                                    .withName(TestConstants.TLS_LISTENER_DEFAULT_NAME)
                                     .withPort(9093)
                                     .withType(KafkaListenerType.INTERNAL)
                                     .withTls(true)
@@ -149,7 +149,7 @@ public class KafkaVersionsST extends AbstractST {
                 .endSpec()
                 .build();
 
-        resourceManager.createResourceWithWait(extensionContext,
+        resourceManager.createResourceWithWait(
             KafkaTopicTemplates.topic(testStorage).build(),
             readUser,
             writeUser,
@@ -157,47 +157,39 @@ public class KafkaVersionsST extends AbstractST {
         );
 
         LOGGER.info("Sending and receiving messages via PLAIN -> SCRAM-SHA");
-
-        KafkaClients kafkaClients = new KafkaClientsBuilder()
-            .withTopicName(testStorage.getTopicName())
-            .withBootstrapAddress(KafkaResources.plainBootstrapAddress(testStorage.getClusterName()))
-            .withNamespaceName(testStorage.getNamespaceName())
-            .withProducerName(testStorage.getProducerName())
-            .withConsumerName(testStorage.getConsumerName())
-            .withMessageCount(testStorage.getMessageCount())
+        final KafkaClients kafkaClientsPlainScramShaWrite = ClientUtils.getInstantScramShaOverPlainClientBuilder(testStorage)
             .withUsername(kafkaUserWrite)
-            .withConsumerGroup(readConsumerGroup)
             .build();
 
-        resourceManager.createResourceWithWait(extensionContext, kafkaClients.producerScramShaPlainStrimzi());
-        ClientUtils.waitForProducerClientSuccess(testStorage);
+        resourceManager.createResourceWithWait(kafkaClientsPlainScramShaWrite.producerScramShaPlainStrimzi());
+        ClientUtils.waitForInstantProducerClientSuccess(testStorage);
 
-        kafkaClients = new KafkaClientsBuilder(kafkaClients)
-                .withUsername(kafkaUserRead)
-                .build();
+        final KafkaClients kafkaClientsPlainScramShaRead = ClientUtils.getInstantScramShaOverPlainClientBuilder(testStorage)
+            .withConsumerGroup(readConsumerGroup)
+            .withUsername(kafkaUserRead)
+            .build();
 
-        resourceManager.createResourceWithWait(extensionContext, kafkaClients.consumerScramShaPlainStrimzi());
-        ClientUtils.waitForConsumerClientSuccess(testStorage);
+        resourceManager.createResourceWithWait(kafkaClientsPlainScramShaRead.consumerScramShaPlainStrimzi());
+        ClientUtils.waitForInstantConsumerClientSuccess(testStorage);
 
         LOGGER.info("Sending and receiving messages via TLS");
 
-        kafkaClients = new KafkaClientsBuilder(kafkaClients)
-            .withBootstrapAddress(KafkaResources.tlsBootstrapAddress(testStorage.getClusterName()))
+        final KafkaClients kafkaClientsTlsScramShaRead = ClientUtils.getInstantTlsClientBuilder(testStorage)
+            .withConsumerGroup(readConsumerGroup)
             .withUsername(kafkaUserReadWriteTls)
             .build();
 
-        resourceManager.createResourceWithWait(extensionContext,
-            kafkaClients.producerTlsStrimzi(testStorage.getClusterName()),
-            kafkaClients.consumerTlsStrimzi(testStorage.getClusterName())
+        resourceManager.createResourceWithWait(
+            kafkaClientsTlsScramShaRead.producerTlsStrimzi(testStorage.getClusterName()),
+            kafkaClientsTlsScramShaRead.consumerTlsStrimzi(testStorage.getClusterName())
         );
-
-        ClientUtils.waitForClientsSuccess(testStorage);
+        ClientUtils.waitForInstantClientSuccess(testStorage);
     }
 
     @BeforeAll
-    void setup(ExtensionContext extensionContext) {
+    void setup() {
         this.clusterOperator = this.clusterOperator
-                .defaultInstallation(extensionContext)
+                .defaultInstallation()
                 .createInstallation()
                 .runInstallation();
     }
