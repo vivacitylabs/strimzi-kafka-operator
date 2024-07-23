@@ -19,11 +19,11 @@ pipeline {
     }
 
     stages {
-        stage('Set permissions on tmp directory') {
-            steps {
-                sh 'chmod 777 -R ${WORKSPACE}@tmp'
-            }
-        }
+//         stage('Set permissions on tmp directory') {
+//             steps {
+//                 sh 'chmod 777 -R ${WORKSPACE}@tmp'
+//             }
+//         }
         stage('Build+push operator:latest') {
             parallel {
                 stage('Debug') {
